@@ -1,0 +1,14 @@
+The following code is an excerpt of the scala implementation of the SpinalHDL langage.
+
+```scala
+
+```
+
+Please refactor the file to improve clarity. Write a new version for the whole file without omitting anything and keeping , or improving comments.
+Can you rewrite with the whole code intact, without ommitting anything, while adding lots of comments explaining in details what is going on ?
+
+
+
+We are going to recfactor and comment the scala code for the SpinalHDL langage.
+I will provide code extract, and you will refactor for clarity when needed, in addition to writing and improving comments.
+
