@@ -195,7 +195,7 @@ class Bundle extends MultiData with Nameable with ValCallbackRec {
                 // If 'that' is a Bundle of the same class type as 'this', it calls the bundleAssign method.
                 // This method iterates over the elements in 'this' and 'that' Bundles and assigns values from 'that' to 'this'.
                 bundleAssign(that) { (to, from) => 
-                    to.assignFrom(from.asInstanceOf[to.This])
+                    to.compositAssignFrom(from,to,kind)
                 }
             }
         case _ => SpinalError(s"A bundle can't be assigned by something else than a bundle ($this <= $that)")
