@@ -72,7 +72,7 @@ class XSimBackend(config: XSimBackendConfig) extends Backend {
   val scriptName = "spinal_xsim.tcl"
   val headerName = "spinal_xsim.h"
   val workPath = s"${workspacePath}/${workspaceName}"
-  val projectName = toplevelName + "_xsim"
+  val taggedunion = toplevelName + "_xsim"
   val scriptPath = new File(s"${workPath}/$scriptName").getAbsolutePath
   val headerPath = new File(s"${workPath}/$headerName").getAbsolutePath
   val fixScriptPath = new File(s"${workPath}/sed.sh").getAbsolutePath
@@ -84,7 +84,7 @@ class XSimBackend(config: XSimBackendConfig) extends Backend {
       ".sh"
     }
   }
-  val simulatePath = new File(s"${workPath}/${projectName}.sim/sim_1/behav/xsim").getAbsolutePath
+  val simulatePath = new File(s"${workPath}/${taggedunion}.sim/sim_1/behav/xsim").getAbsolutePath
   val simulateKernelPath = new File(s"${simulatePath}/xsim.dir/${toplevelName}_behav").getAbsolutePath
   val compilePath = s"${simulatePath}/compile.${scriptSuffix}"
   val elaboratePath = s"${simulatePath}/elaborate.${scriptSuffix}"
@@ -152,7 +152,7 @@ class XSimBackend(config: XSimBackendConfig) extends Backend {
          |
          |""".stripMargin
 
-    val createProject = s"create_project -force $projectName -part $xilinxDevice"
+    val createProject = s"create_project -force $taggedunion -part $xilinxDevice"
     val importRtl = rtlAbsoluteSourcesPaths map { p =>
       s"import_files -force $p"
     }

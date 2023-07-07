@@ -12,7 +12,7 @@ import scala.sys.process._
 
 object LiberoFlow {
   def apply(liberoPath : String,workspacePath : String,toplevelPath : String,family : String,device : String,frequencyTarget : HertzNumber = null,processorCount : Int = 1) : Report = {
-    val projectName = toplevelPath.split("/").last.split("[.]").head
+    val taggedunion = toplevelPath.split("/").last.split("[.]").head
     val targetPeriod = (if(frequencyTarget != null) frequencyTarget else 100 MHz).toTime
 
     val workspacePathFile = new File(workspacePath)
@@ -28,8 +28,8 @@ object LiberoFlow {
     val tcl = new java.io.FileWriter(Paths.get(workspacePath, "doit.tcl").toFile)
     tcl.write(
 s"""new_project\\
-  -location {${Paths.get(workspacePath, projectName)}} \\
-  -name {$projectName} \\
+  -location {${Paths.get(workspacePath, taggedunion)}} \\
+  -name {$taggedunion} \\
   -project_description {} \\
   -hdl {${if(isVhdl) "VHDL" else "VERILOG"}} \\
   -family {$family} \\
@@ -56,7 +56,7 @@ run_tool -name {VERIFYTIMING} -script {} -defvar {} -defvars {}
     new Report{
       override def getFMax(): Double =  {
         import scala.io.Source
-        val report = Source.fromFile(Paths.get(workspacePath, projectName, "designer/impl1" , s"${projectName}_maxdelay_timing_report.txt").toFile).getLines.mkString
+        val report = Source.fromFile(Paths.get(workspacePath, taggedunion, "designer/impl1" , s"${taggedunion}_maxdelay_timing_report.txt").toFile).getLines.mkString
         val intFind = "-?(\\d+\\.?)+".r
         val leFreq = try {
           (family match {
@@ -70,7 +70,7 @@ run_tool -name {VERIFYTIMING} -script {} -defvar {} -defvars {}
       }
       override def getArea(): String =  {
         import scala.io.Source
-        val report = Source.fromFile(Paths.get(workspacePath, projectName, "designer/impl1" , s"${projectName}_place_and_route_report.txt").toFile).getLines.mkString
+        val report = Source.fromFile(Paths.get(workspacePath, taggedunion, "designer/impl1" , s"${taggedunion}_place_and_route_report.txt").toFile).getLines.mkString
         val intFind = "(\\d+\\.?)+".r
         val leArea = try {
           family match {

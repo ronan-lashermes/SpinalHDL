@@ -230,19 +230,14 @@ class Bundle extends MultiData with Nameable with ValCallbackRec {
     // along with their associated names.
     override def elements: ArrayBuffer[(String, Data)] = elementsCache
 
-    // The `rejectOlder` method is defined as always returning true. The purpose of this method 
-    // depends on its usage elsewhere in the code, which is not shown here. Generally, it could be 
-    // used to control the behavior of the bundle when dealing with older or outdated data.
+    // The `rejectOlder` method is defined as always returning true. 
     private[core] def rejectOlder = true
 
     // The `getTypeString` method returns the simple name of the class of the current object. 
-    // This is mainly used for debugging purposes, as it allows you to easily identify the class 
-    // of an object at runtime.
     def getTypeString = getClass.getSimpleName
 
     // The `toString` method returns a string representation of the object. 
-    // It contains the path of the component, the name of the bundle, and the simple name of the class. 
-    // Again, this is mainly used for debugging purposes.
+    // It contains the path of the component, the name of the bundle, and the simple name of the class.
     override def toString(): String = s"${component.getPath() + "/" + this.getDisplayName()} : $getTypeString"
 
 }

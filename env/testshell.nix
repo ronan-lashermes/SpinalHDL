@@ -39,6 +39,7 @@ stdenv.mkDerivation {
         pkgs.sbt
         pkgs.verilog
         pkgs.ghdl
+        find-libpython
     ];
 
 

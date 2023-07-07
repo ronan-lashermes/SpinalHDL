@@ -51,7 +51,7 @@ object QuartusFlow {
 
 
   def apply(quartusPath : String,workspacePath : String,toplevelPath : String,family : String,device : String,frequencyTarget : HertzNumber = null,processorCount : Int = 1) : Report = {
-    val projectName = toplevelPath.split("/").last.split("[.]").head
+    val taggedunion = toplevelPath.split("/").last.split("[.]").head
 
     val targetPeriod = (if(frequencyTarget != null) frequencyTarget else 400 MHz).toTime
 
@@ -60,13 +60,13 @@ object QuartusFlow {
     workspacePathFile.mkdir()
     FileUtils.copyFileToDirectory(new File(toplevelPath), workspacePathFile)
 
-    doCmd(s"""${Paths.get(quartusPath,"quartus_map")} ${Paths.get(workspacePath,projectName)} --family="$family" --part=$device --source=${Paths.get(workspacePath,toplevelPath)}""")
-    doCmd(s"""${Paths.get(quartusPath,"quartus_fit")} ${Paths.get(workspacePath,projectName)} --parallel=$processorCount""") // --fmax=${(if(frequencyTarget != null) frequencyTarget else 400 MHz).toBigDecimal*1e-6}mhz
-    doCmd(s"${Paths.get(quartusPath,"quartus_sta")} ${Paths.get(workspacePath,projectName)}")
+    doCmd(s"""${Paths.get(quartusPath,"quartus_map")} ${Paths.get(workspacePath,taggedunion)} --family="$family" --part=$device --source=${Paths.get(workspacePath,toplevelPath)}""")
+    doCmd(s"""${Paths.get(quartusPath,"quartus_fit")} ${Paths.get(workspacePath,taggedunion)} --parallel=$processorCount""") // --fmax=${(if(frequencyTarget != null) frequencyTarget else 400 MHz).toBigDecimal*1e-6}mhz
+    doCmd(s"${Paths.get(quartusPath,"quartus_sta")} ${Paths.get(workspacePath,taggedunion)}")
 
     new Report{
-      override def getFMax(): Double =  (QuartusFlow.getFMax(s"${Paths.get(workspacePath,s"$projectName.sta.rpt")}"))
-      override def getArea(): String =  (QuartusFlow.getArea(s"${Paths.get(workspacePath,s"$projectName.flow.rpt")}"))
+      override def getFMax(): Double =  (QuartusFlow.getFMax(s"${Paths.get(workspacePath,s"$taggedunion.sta.rpt")}"))
+      override def getArea(): String =  (QuartusFlow.getArea(s"${Paths.get(workspacePath,s"$taggedunion.flow.rpt")}"))
     }
   }
 
