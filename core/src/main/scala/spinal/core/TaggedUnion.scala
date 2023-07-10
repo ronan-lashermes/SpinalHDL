@@ -20,150 +20,479 @@
 \*                                                                           */
 package spinal.core
 
-// Importing the necessary packages
-import scala.collection.mutable.ArrayBuffer
 import spinal.core.internals._
-import spinal.idslplugin.{Location, ValCallback}
+import spinal.idslplugin.Location
 
-import scala.collection.mutable
+import scala.collection.mutable.ArrayBuffer
 
 
 /**
- * Class TaggedUnion represents a composite data structure that consists of multiple named signals, where only one signal can be active at a time. 
- * This is a key abstraction in SpinalHDL, commonly used to represent hardware data structures, buses, interfaces, etc.
- */
-class TaggedUnion extends EitherData with Nameable with ValCallbackRec {
+  * Definition of an element of the enumeration
+  *
+  * @param spinalEnum parent of the element (TaggedUnion)
+  * @param position position of the element
+  */
+class TaggedUnionElement[T <: TaggedUnion](val spinalEnum: T, val position: Int) extends Nameable {
 
-    // 'hardType' is a variable that holds the 'HardType' instance, which can be used as a factory for creating 
-    // new instances of this taggedUnion. The 'HardType' is a way of storing the data type or the blueprint of this
-    // taggedUnion so that it can be used to produce similar structured taggedUnions. It is used in the 'clone' method
-    // to create a new instance of the same structure.
-    var hardtype: HardType[_] = null
+  def getSignature() : Any = List(position, getName(""))
 
-    /**
-    * Overriding the clone method to create a new TaggedUnion instance with the same properties.
-    */
-    override def clone: TaggedUnion = {
-        if (hardtype != null) {
-            val ret = hardtype().asInstanceOf[this.type]
-            ret.hardtype = hardtype
-            return ret
-        }
-        super.clone.asInstanceOf[TaggedUnion]
-    }
+  def ===(that: TaggedUnionCraft[T]): Bool = that === this
+  def =/=(that: TaggedUnionCraft[T]): Bool = that =/= this
 
-    /** 
-    * A method to assign the values of this TaggedUnion's signals from another TaggedUnion by matching names. 
-    */
-    def assignAllByName(that: TaggedUnion): Unit = {
-        for ((name, element) <- elements) {
-            val other = that.find(name)
-            if (other == null)
-                LocatedPendingError(s"TaggedUnion assignment is not complete. Missing $name")
-            else element match {
-                case b: TaggedUnion => b.assignAllByName(other.asInstanceOf[TaggedUnion])
-                case _         => element := other
-            }
-        }
-    }
+  def apply(): TaggedUnionCraft[T] = craft()
+  def apply(encoding: TaggedUnionEncoding): TaggedUnionCraft[T] = craft(encoding)
 
-    /**
-    * A method to assign the values of this TaggedUnion's signals from another TaggedUnion by matching names.
-    * Unlike assignAllByName, this will not raise an error if some names are not found in the source TaggedUnion.
-    */
-    def assignSomeByName(that: TaggedUnion): Unit = {
-        for ((name, element) <- elements) {
-            val other = that.find(name)
-            if (other != null) {
-                element match {
-                case b: TaggedUnion => b.assignSomeByName(other.asInstanceOf[TaggedUnion])
-                case _         => element := other
-                }
-            }
-        }
-    }
+  def craft(): TaggedUnionCraft[T] = {
+    val ret = spinalEnum.craft(inferred).asInstanceOf[TaggedUnionCraft[T]].setAsTypeNode()
+    ret.assignFrom(new TaggedUnionLiteral(this))
+    ret
+  }
 
-    /**
-    * A generic method that accepts a function 'f' as parameter and applies it to each pair of corresponding elements in 'this' and 'that' TaggedUnions.
-    */
-    def taggedUnionAssign(that : TaggedUnion)(f : (Data, Data) => Unit): Unit ={
-        for ((name, element) <- elements) {
-            val other = that.find(name)
-            if (other == null) {
-                LocatedPendingError(s"TaggedUnion assignment is not complete. $this need '$name' but $that doesn't provide it.")
-            }
-            else {
-                f(element, other)
-            }
-        }
-    }
+  def craft(encoding: TaggedUnionEncoding): TaggedUnionCraft[T] = {
+    val ret = spinalEnum.craft(encoding).asInstanceOf[TaggedUnionCraft[T]]
+    val lit = new TaggedUnionLiteral(this)
 
-    /**
-    * Overriding the assignFromImpl method from MultiData. 
-    * It checks if 'that' is a TaggedUnion and of the same final class as 'this', and calls 'taggedUnionAssign' to assign values.
-    * If 'that' is not a TaggedUnion, it throws an Exception.
-    */
-    private[core] override def assignFromImpl(that: AnyRef, target: AnyRef, kind: AnyRef)(implicit loc: Location): Unit = {
-        that match {
-        case that: TaggedUnion =>
-            if (!this.getClass.isAssignableFrom(that.getClass)) {
-                // If 'that' is not of the same class type as 'this', it raises an error.
-                SpinalError("TaggedUnions must have the same final class to be assigned. Either use assignByName or assignSomeByName at \n" + ScalaLocated.long)
-            } else {
-                // If 'that' is a TaggedUnion of the same class type as 'this', it calls the taggedUnionAssign method.
-                // This method iterates over the elements in 'this' and 'that' TaggedUnions and assigns values from 'that' to 'this'.
-                taggedUnionAssign(that) { (to, from) => 
-                    to.compositAssignFrom(from,to,kind)
-                }
-            }
-        case _ => SpinalError(s"A tagged union can't be assigned by something else than a tagged union ($this <= $that)")
-        }
-    }
+    lit.fixEncoding(encoding)
+    ret.assignFrom(lit)
+    ret
+  }
 
-
-    // `elementsCache` is an ArrayBuffer of Tuple2 containing a String and a Data. 
-    // This array buffer is used to store all elements of the tagged union with their associated names. 
-    // Each element in the array buffer is a pair, where the first item is the name of the element 
-    // and the second item is the Data object that represents the element itself.
-    var elementsCache = ArrayBuffer[(String, Data)]()
-
-    // The `valCallbackRec` method is called each time a value is added to the tagged union.
-    // This method is mainly responsible for updating `elementsCache` and setting the parent of the new item to `this` (the current tagged union).
-    // It also sets a partial name for the new item if certain conditions are met.
-    override def valCallbackRec(ref: Any, name: String): Unit = ref match {
-        case ref : Data => {
-            SpinalInfo(s"!!!!!!!!!!!! valCallbackRec $ref $name")
-            // Add the new item to `elementsCache`
-            elementsCache += name -> ref
-            // Set the parent of the new item to `this` (the current tagged union)
-            ref.parent = this
-            // If certain conditions are met (as defined by `OwnableRef.proposal(ref, this)`), 
-            // set a partial name for the new item
-            if(OwnableRef.proposal(ref, this)) ref.setPartialName(name, Nameable.DATAMODEL_WEAK)
-        }
-        // If `ref` is not an instance of `Data`, do nothing
-        case ref =>
-    }
-
-    // The `elements` method returns the `elementsCache`, which contains all elements of the tagged union 
-    // along with their associated names.
-    override def elements: ArrayBuffer[(String, Data)] = {
-        SpinalInfo(s"!!!!!!!!!!!! elements $elementsCache")
-        elementsCache
-    } 
-
-    // The `rejectOlder` method is defined as always returning true. 
-    private[core] def rejectOlder = true
-
-    // The `getTypeString` method returns the simple name of the class of the current object. 
-    def getTypeString = getClass.getSimpleName
-
-    // The `toString` method returns a string representation of the object. 
-    // It contains the path of the component, the name of the tagged union, and the simple name of the class. 
-    override def toString(): String = s"${component.getPath() + "/" + this.getDisplayName()} : $getTypeString"
-
+  def asBits: Bits = craft().asBits
 }
 
-class TaggedUnionCase extends TaggedUnion {
-    private[core] override def rejectOlder = false
+
+/**
+ * Base class for creating enumeration
+ *
+ * @see  [[http://spinalhdl.github.io/SpinalDoc/spinal/core/types/Enum Enumeration Documentation]]
+ *
+ * @example {{{
+ *         object MyEnum extends TaggedUnion(binarySequential){
+ *           val s1, s2, s3, s4 = newElement()
+ *         }
+ *         }}}
+ *
+ * TaggedUnion contains a list of TaggedUnionElement that is the definition of an element. TaggedUnionCraft is the
+ * hardware representation of the the element.
+ *
+ * @param defaultEncoding encoding of the senum
+ */
+class TaggedUnion(var defaultEncoding: TaggedUnionEncoding = native) extends Nameable with ScalaLocated {
+
+  assert(defaultEncoding != inferred, "Enum definition should not have 'inferred' as default encoding")
+
+  type C = TaggedUnionCraft[this.type]
+  type E = TaggedUnionElement[this.type]
+
+  var forcedPrefixEnable : Option[Boolean] = None
+  var forcedGlobalEnable : Option[Boolean] = None
+
+  private[core] def isPrefixEnable = forcedPrefixEnable.getOrElse(GlobalData.get.config.enumPrefixEnable)
+  private[core] def isGlobalEnable = forcedGlobalEnable.getOrElse(GlobalData.get.config.enumGlobalEnable)
+
+  /** Contains all elements of the enumeration */
+  @dontName val elements = ArrayBuffer[TaggedUnionElement[this.type]]()
+
+  def getSignature() : Any = List(getName(""), defaultEncoding.getSignature(), isPrefixEnable, isGlobalEnable, elements.map(_.getSignature()).toList)
+
+  def apply() = craft()
+  def apply(encoding: TaggedUnionEncoding) = craft(encoding)
+
+  def craft(): TaggedUnionCraft[this.type] = craft(defaultEncoding)
+  def craft(enumEncoding: TaggedUnionEncoding): TaggedUnionCraft[this.type] = {
+    val ret = new TaggedUnionCraft[this.type](this)
+    if(enumEncoding != `inferred`) ret.fixEncoding(enumEncoding)
+    ret
+  }
+
+  /** Create a new Element */
+  // def newElement(): TaggedUnionElement[this.type] = newElement(null)
+
+  def newElement(name: String): TaggedUnionElement[this.type] = {
+    val v = new TaggedUnionElement(this,elements.size).asInstanceOf[TaggedUnionElement[this.type]]
+    if (name != null) v.setName(name)
+    elements += v
+    v
+  }
+
+  def rawElementName() = {
+    forcedPrefixEnable = Some(false)
+  }
+
+  def setLocal() = {
+    forcedGlobalEnable = Some(false)
+  }
+  def setGlobal() = {
+    forcedGlobalEnable = Some(true)
+  }
+}
+
+
+/**
+  * Hardware representation of an enumeration
+  */
+class TaggedUnionCraft[T <: TaggedUnion](var spinalEnum: TaggedUnion) extends BaseType with InferableTaggedUnionEncodingImpl  with BaseTypePrimitives[TaggedUnionCraft[T]]  with DataPrimitives[TaggedUnionCraft[T]] {
+
+  override def getTypeObject: Any = TypeEnum
+
+  override def opName: String = "EnumCraft"
+
+  private[core] override def getDefaultEncoding(): TaggedUnionEncoding = spinalEnum.defaultEncoding
+
+  override private[core] def canSymplifyIt = super.canSymplifyIt && (this.encodingChoice == InferableTaggedUnionEncodingImplChoiceUndone)
+
+  override def getDefinition: TaggedUnion = spinalEnum
+  override def swapEnum(e: TaggedUnion) = spinalEnum = e
+
+  private[spinal] override def _data: TaggedUnionCraft[T] = this
+
+  private[core] def assertSameType(than: TaggedUnionCraft[_]): Unit = if (spinalEnum != than.spinalEnum) SpinalError("Enum is assigned by a incompatible enum")
+
+  def :=(that: TaggedUnionElement[T]): Unit = new DataPimper(this) := that.craft()
+  def ===(that: TaggedUnionElement[T]): Bool = this === that.craft()
+  def =/=(that: TaggedUnionElement[T]): Bool = this =/= that.craft()
+
+  @deprecated("Use =/= instead","???")
+  def !==(that: TaggedUnionElement[T]): Bool = this =/= that
+
+  private[core] override def assignFromImpl(that: AnyRef, target: AnyRef, kind: AnyRef)(implicit loc: Location): Unit = that match{
+    case that : TaggedUnionCraft[T]          => super.assignFromImpl(that, target, kind)
+    case that : Expression with EnumEncoded => super.assignFromImpl(that, target, kind)
+    //    case that : DontCareNodeEnum => super.assignFromImpl(that, conservative)
+  }
+
+  override def isEqualTo(that: Any): Bool = {
+    that match{
+      case that: TaggedUnionCraft[_] if that.spinalEnum == spinalEnum    => wrapLogicalOperator(that, new Operator.Enum.Equal(spinalEnum));
+      case that: TaggedUnionElement[_] if that.spinalEnum == spinalEnum  => wrapLogicalOperator(that(), new Operator.Enum.Equal(spinalEnum));
+      case _                                                            => SpinalError("Incompatible test")
+    }
+  }
+  override def isNotEqualTo(that: Any): Bool = {
+    that match{
+      case that: TaggedUnionCraft[_] if that.spinalEnum == spinalEnum    => wrapLogicalOperator(that, new Operator.Enum.NotEqual(spinalEnum));
+      case that: TaggedUnionElement[_] if that.spinalEnum == spinalEnum  => wrapLogicalOperator(that(), new Operator.Enum.NotEqual(spinalEnum));
+      case _                                                            => SpinalError("Incompatible test")
+    }
+  }
+
+  private[core] override def newMultiplexerExpression() = new MultiplexerEnum(spinalEnum)
+  private[core] override def newBinaryMultiplexerExpression() = new BinaryMultiplexerEnum(spinalEnum)
+
+  override def asBits: Bits = wrapCast(new Bits(), new CastEnumToBits)
+
+  override def assignFromBits(bits: Bits): Unit = {
+    val c    = cloneOf(this)
+    val cast = new CastBitsToEnum(this.spinalEnum)
+
+    cast.input = bits.asInstanceOf[cast.T]
+    c.assignFrom(cast)
+
+    this := c
+  }
+
+  override def assignFromBits(bits: Bits, hi: Int, lo: Int): Unit = {
+    assert(lo == 0, "Enumeration can't be partially assigned")
+    assert(hi == getBitsWidth-1, "Enumeration can't be partially assigned")
+    assignFromBits(bits)
+  }
+
+  override def getBitsWidth: Int = encoding match {
+    case null => SpinalError("Trying to get the bits width of a enumeration which has no fixed encoding, it has to be fixed ex : myEnum.fixEncoding(native)")
+    case _ => encoding.getWidth(spinalEnum)
+  }
+
+  override def clone: this.type = {
+    val res = new TaggedUnionCraft(spinalEnum).asInstanceOf[this.type]
+    res.copyEncodingConfig(this)
+    res.asInstanceOf[this.type]
+  }
+
+  def init(enumElement: TaggedUnionElement[T]): this.type = {
+    this.init(enumElement()).asInstanceOf[this.type]
+  }
+
+  /** Return the name of the parent */
+  private[core] def getParentName: String = spinalEnum.getName()
+
+  override def getZero: this.type = {
+    val ret = clone
+    ret.assignFromBits(B(0, getEncoding.getWidth(spinalEnum) bits))
+    ret.asInstanceOf[this.type]
+  }
+
+  private[core] override def weakClone: this.type = {
+    val ret = new TaggedUnionCraft(spinalEnum).asInstanceOf[this.type]
+    ret.asInstanceOf[this.type]
+  }
+
+  override def normalizeInputs: Unit = {
+    InputNormalize.enumImpl(this)
+  }
+
+  override def assignDontCare(): this.type = {
+    this.assignFrom(new EnumPoison(spinalEnum))
+    this
+  }
+
+  override private[core] def formalPast(delay: Int) = this.wrapUnaryOperator(new Operator.Formal.PastEnum(this.spinalEnum, delay))
+
+  override def assignFormalRandom(kind: Operator.Formal.RandomExpKind) = this.assignFrom(new Operator.Formal.RandomExpEnum(this.spinalEnum, kind))
+}
+
+
+/**
+  * Node representation which contains the value of an TaggedUnionElement
+  */
+class TaggedUnionLiteral[T <: TaggedUnion](var senum: TaggedUnionElement[_ <: TaggedUnion]) extends Literal with InferableTaggedUnionEncodingImpl {
+
+  override def getTypeObject: Any = TypeEnum
+
+  override def opName: String = "E"
+
+  override def clone: this.type = {
+    val ret = new TaggedUnionLiteral(senum).asInstanceOf[this.type]
+    ret.copyEncodingConfig(this)
+    ret.asInstanceOf[this.type]
+  }
+
+  override def getValue(): BigInt = encoding.getValue(senum)
+
+  private[core] override def getBitsStringOn(bitCount: Int, poisonSymbol: Char): String = {
+    val str = encoding.getValue(senum).toString(2)
+    "0" * (bitCount - str.length) + str
+  }
+  override def hasPoison() = false
+
+  override def getDefinition: TaggedUnion = senum.spinalEnum
+  override def swapEnum(e: TaggedUnion) = senum = e.elements(senum.position)
+
+  private[core] override def getDefaultEncoding(): TaggedUnionEncoding = senum.spinalEnum.defaultEncoding
+}
+
+
+class EnumPoison(var senum: TaggedUnion) extends Literal with InferableTaggedUnionEncodingImpl {
+
+  override def getTypeObject: Any = TypeEnum
+
+  override def opName: String = "E?"
+
+  override def clone: this.type = {
+    val ret = new EnumPoison(senum).asInstanceOf[this.type]
+    ret.copyEncodingConfig(this)
+    ret.asInstanceOf[this.type]
+  }
+
+  override def getValue(): BigInt = throw new Exception("EnumPoison has no value")
+
+  private[core] override def getBitsStringOn(bitCount: Int, poisonSymbol: Char): String = {
+    val str = poisonSymbol.toString * encoding.getWidth(senum)
+    "0" * (bitCount - str.length) + str
+  }
+
+  override def getDefinition: TaggedUnion = senum
+  override def swapEnum(e: TaggedUnion) = senum = e
+  override def hasPoison() = true
+  private[core] override def getDefaultEncoding(): TaggedUnionEncoding = senum.defaultEncoding
+}
+
+
+
+/**
+  * Trait to define an encoding
+  */
+trait TaggedUnionEncoding extends Nameable with ScalaLocated{
+  /** Return the width of the encoding  */
+  def getWidth(senum: TaggedUnion): Int
+  /** Return the value of the encoding */
+  def getValue[T <: TaggedUnion](element: TaggedUnionElement[T]): BigInt
+  def getElement[T <: TaggedUnion](element: BigInt, senum : T): TaggedUnionElement[T]
+
+  def isNative: Boolean = false
+
+  def getSignature() : Any = this
+}
+
+
+/**
+  * Inferred encoding
+  */
+object inferred extends TaggedUnionEncoding{
+  override def getWidth(senum: TaggedUnion): Int = ???
+  override def getValue[T <: TaggedUnion](element: TaggedUnionElement[T]): BigInt = ???
+  override def getElement[T <: TaggedUnion](element: BigInt, senum : T): TaggedUnionElement[T] = ???
+  override def isNative: Boolean = ???
+}
+
+
+/**
+  * Native encoding
+  */
+object native extends TaggedUnionEncoding{
+  override def getWidth(senum: TaggedUnion): Int = log2Up(senum.elements.length)
+  override def getValue[T <: TaggedUnion](element: TaggedUnionElement[T]): BigInt = element.position
+  override def getElement[T <: TaggedUnion](element: BigInt, senum : T): TaggedUnionElement[T] = senum.elements(element.toInt)
+
+  override def isNative = true
+  setName("native")
+}
+
+
+/**
+  * Binary Sequential
+  * @example{{{ 000, 001, 010, 011, 100, 101, .... }}}
+  */
+object binarySequential extends TaggedUnionEncoding{
+  override def getWidth(senum: TaggedUnion): Int = log2Up(senum.elements.length)
+  override def getValue[T <: TaggedUnion](element: TaggedUnionElement[T]): BigInt = element.position
+  override def getElement[T <: TaggedUnion](element: BigInt, senum : T): TaggedUnionElement[T] = senum.elements(element.toInt)
+  setName("seq")
+}
+
+
+/**
+  * Binary One hot encoding
+  * @example{{{ 001, 010, 100 }}}
+  */
+object binaryOneHot extends TaggedUnionEncoding{
+  override def getWidth(senum: TaggedUnion): Int = senum.elements.length
+  override def getValue[T <: TaggedUnion](element: TaggedUnionElement[T]): BigInt = BigInt(1) << element.position
+  override def getElement[T <: TaggedUnion](element: BigInt, senum : T): TaggedUnionElement[T] = senum.elements(element.bitLength-1)
+  setName("oh")
+}
+
+/**
+ * Gray encoding (sequentially assigned)
+ * @example{{{ 000, 001, 011, 010, ... }}}
+ * @note If used in FSM it is not ensured that only gray encoding preserving
+ *       transitions are done. If that is needed e.g. for CDC reasons, the
+ *       transitions must be checked manually.
+ */
+object graySequential extends TaggedUnionEncoding {
+  override def getWidth(e: TaggedUnion) = log2Up(e.elements.length)
+  override def getValue[T <: TaggedUnion](element: TaggedUnionElement[T]): BigInt = Gray.encode(element.position)
+  override def getElement[T <: TaggedUnion](value: BigInt, enums: T): TaggedUnionElement[T] = enums.elements(Gray.decode(value).toInt)
+  setName("graySeq")
+}
+
+/**
+  * Used to create a custom encoding
+  *
+  * @example {{{
+  *   object BR extends TaggedUnion{
+  *     val NE, EQ, J, JR = newElement()
+  *     defaultEncoding = TaggedUnionEncoding("opt")(
+  *         EQ -> 0,
+  *         NE -> 1,
+  *         J  -> 2,
+  *         JR -> 3 )
+  *   }
+  * }}}
+  *
+  */
+object TaggedUnionEncoding{
+
+  def apply[X <: TaggedUnion](name: String)(spec: (TaggedUnionElement[X], BigInt)*): TaggedUnionEncoding = {
+    val map: Map[TaggedUnionElement[X], BigInt] = spec.toMap
+    list(name)(map)
+  }
+
+  def apply(name: String, spec: Int => BigInt): TaggedUnionEncoding = apply(spec).setName(name)
+
+  def apply(spec: Int => BigInt): TaggedUnionEncoding = new TaggedUnionEncoding {
+    override def getWidth(senum: TaggedUnion): Int = log2Up(senum.elements.map(getValue(_)).max+1)
+    override def isNative: Boolean = false
+    override def getValue[T <: TaggedUnion](element: TaggedUnionElement[T]): BigInt = spec(element.position)
+    override def getElement[T <: TaggedUnion](element: BigInt, senum: T) = ???
+  }
+
+  def list[X <: TaggedUnion](name: String)(spec: Map[TaggedUnionElement[X], BigInt]): TaggedUnionEncoding = list(spec).setName(name)
+
+  def list[X <: TaggedUnion](spec: Map[TaggedUnionElement[X], BigInt]): TaggedUnionEncoding = {
+    if(spec.size != spec.head._1.spinalEnum.elements.size){
+      SpinalError("All elements of the enumeration should be mapped")
+    }
+
+    return new TaggedUnionEncoding {
+      val width = log2Up(spec.values.foldLeft(BigInt(0))((a, b) => if(a > b) a else b) + 1)
+      val specInv = spec.map(_.swap)
+      override def getWidth(senum: TaggedUnion): Int = width
+      override def isNative: Boolean = false
+      override def getValue[T <: TaggedUnion](element: TaggedUnionElement[T]): BigInt = {
+        return spec(element.asInstanceOf[TaggedUnionElement[X]])
+      }
+      override def getElement[T <: TaggedUnion](element: BigInt, senum: T) = specInv(element).asInstanceOf[TaggedUnionElement[T]]
+    }
+  }
+}
+
+trait InferableTaggedUnionEncodingImplChoice
+object InferableTaggedUnionEncodingImplChoiceUndone      extends InferableTaggedUnionEncodingImplChoice
+object InferableTaggedUnionEncodingImplChoiceFixed       extends InferableTaggedUnionEncodingImplChoice
+object InferableTaggedUnionEncodingImplChoiceAnticipated extends InferableTaggedUnionEncodingImplChoice
+object InferableTaggedUnionEncodingImplChoiceInferred    extends InferableTaggedUnionEncodingImplChoice
+
+
+trait InferableTaggedUnionEncodingImpl extends EnumEncoded  with InferableEnumEncoding with ContextUser with ScalaLocated{
+  private[core] var encodingChoice: InferableTaggedUnionEncodingImplChoice = InferableTaggedUnionEncodingImplChoiceUndone
+  private[core] var encoding : TaggedUnionEncoding = null
+
+  override def swapEncoding(encoding: TaggedUnionEncoding): Unit = this.encoding = encoding
+
+  override def propagateEncoding = encodingChoice == InferableTaggedUnionEncodingImplChoiceFixed
+
+  override def bootInferration(): Unit = {
+    if(encodingChoice == InferableTaggedUnionEncodingImplChoiceUndone){
+      encodingChoice = InferableTaggedUnionEncodingImplChoiceInferred
+      encoding       = getDefaultEncoding()
+    }
+  }
+
+  private[core] def getDefaultEncoding(): TaggedUnionEncoding
+
+  def fixEncoding(e: TaggedUnionEncoding): this.type = {
+    encoding       = e
+    encodingChoice = InferableTaggedUnionEncodingImplChoiceFixed
+    this
+  }
+
+  def copyEncodingConfig(that: InferableTaggedUnionEncodingImpl): Unit = {
+    this.encoding       = that.encoding
+    this.encodingChoice = that.encodingChoice
+  }
+
+  private[core] override def encodingProposal(e: TaggedUnionEncoding): Boolean = {
+    def takeIt: Boolean ={
+      if(encoding != e) {
+        encoding = e
+        encodingChoice = InferableTaggedUnionEncodingImplChoiceInferred
+        true
+      }else{
+        false
+      }
+    }
+
+    encodingChoice match {
+      case `InferableTaggedUnionEncodingImplChoiceUndone`      => takeIt
+      case `InferableTaggedUnionEncodingImplChoiceInferred`    => takeIt
+      case `InferableTaggedUnionEncodingImplChoiceAnticipated` =>
+        if(encoding != e){
+          globalData.pendingErrors += (() => s"$this encoding has change between the elaboration phase and the compilation phase\n${this.getScalaLocationLong}")
+        }
+        false
+      case `InferableTaggedUnionEncodingImplChoiceFixed` => false
+    }
+  }
+
+  override def getEncoding: TaggedUnionEncoding = {
+    if (globalData.nodeAreInferringEnumEncoding) {
+      encoding
+    } else {
+      if(encodingChoice == InferableTaggedUnionEncodingImplChoiceUndone){
+        encoding = getDefaultEncoding()
+        encodingChoice = InferableTaggedUnionEncodingImplChoiceAnticipated
+      }
+      encoding
+    }
+  }
 }
