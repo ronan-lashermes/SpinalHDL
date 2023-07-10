@@ -1,7 +1,8 @@
 
 
 ThisBuild / version := "1.0"
-ThisBuild / scalaVersion := "2.12.16"
+// ThisBuild / scalaVersion := "2.12.16"
+ThisBuild / scalaVersion := "2.11.12"
 ThisBuild / organization := "example"
 
 
@@ -18,8 +19,8 @@ lazy val taggedunion = (project in file("."))
     Compile / scalaSource := baseDirectory.value / "hw" / "spinal",
     inThisBuild(List(
       organization := "com.github.spinalhdl",
-      // scalaVersion := "2.11.12",
-      scalaVersion := "2.12.16",
+      scalaVersion := "2.11.12",
+      // scalaVersion := "2.12.16",
       version      := "2.0.0"
     )),
     scalacOptions +=  s"-Xplugin:${new File(spinalhdl_path + s"/idslplugin/target/scala-2.11/spinalhdl-idsl-plugin_2.11-$spinalVersion.jar")}",

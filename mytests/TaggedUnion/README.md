@@ -81,3 +81,8 @@ mill projectname.runMain projectname.MyTopLevelVhdl
 // To run the testbench
 mill projectname.runMain projectname.MyTopLevelSim
 ```
+
+
+```bash
+sbt "runMain taggedunion.MyTopLevelVerilog"
+```
