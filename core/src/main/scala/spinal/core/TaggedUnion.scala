@@ -132,6 +132,7 @@ class TaggedUnion extends EitherData with Nameable with ValCallbackRec {
     // It also sets a partial name for the new item if certain conditions are met.
     override def valCallbackRec(ref: Any, name: String): Unit = ref match {
         case ref : Data => {
+            SpinalInfo(s"!!!!!!!!!!!! valCallbackRec $ref $name")
             // Add the new item to `elementsCache`
             elementsCache += name -> ref
             // Set the parent of the new item to `this` (the current tagged union)
@@ -146,7 +147,10 @@ class TaggedUnion extends EitherData with Nameable with ValCallbackRec {
 
     // The `elements` method returns the `elementsCache`, which contains all elements of the tagged union 
     // along with their associated names.
-    override def elements: ArrayBuffer[(String, Data)] = elementsCache
+    override def elements: ArrayBuffer[(String, Data)] = {
+        SpinalInfo(s"!!!!!!!!!!!! elements $elementsCache")
+        elementsCache
+    } 
 
     // The `rejectOlder` method is defined as always returning true. 
     private[core] def rejectOlder = true

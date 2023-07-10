@@ -385,6 +385,7 @@ abstract class EitherData extends Data {
     * @return A string representation of all elements.
     */
     def elementsString = this.elements.map(_.toString()).reduce(_ + "\n" + _)
+    // SpinalInfo(s"elementsString = $elementsString")
 
     /**
     * Apply a function to each pair of corresponding elements in this EitherData and another EitherData.
