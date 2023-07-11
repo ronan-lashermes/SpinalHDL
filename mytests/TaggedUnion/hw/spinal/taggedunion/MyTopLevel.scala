@@ -27,16 +27,21 @@ case class ReadPort() extends Bundle with IMasterSlave {
 
 case class WritePort() extends Bundle with IMasterSlave {
   val addr = UInt(8 bits)
-  val data = Bits(32 bits)
+  val data = Bits(40 bits)
 
   def asMaster(): Unit = {
     out(addr, data)
   }
 }
 
-object ReadWriteEnum extends TaggedUnion {
-  val read = newElement()
-  val write = newElement()
+// object ReadWriteEnum extends TaggedUnion {
+//   val read = newElement()
+//   val write = newElement()
+// }
+
+object ReadWriteUnion extends TaggedUnion {
+  val read = newData("read", ReadPort())
+  val write = newData("write", WritePort())
 }
 
 // Hardware definition
@@ -46,7 +51,8 @@ case class MyTopLevel() extends Component {
     val cond1 = in  Bool()
     val flag  = out Bool()
     val state = out UInt(8 bits)
-    val rw_enum = out (ReadWriteEnum())
+    // val rw_enum = out (ReadWriteEnum())
+    val rw_union = in (ReadWriteUnion())
   }
 
   val counter = Reg(UInt(8 bits)) init 0
@@ -58,7 +64,7 @@ case class MyTopLevel() extends Component {
   io.state := counter
   io.flag := (counter === 0) | io.cond1
 
-  io.rw_enum := ReadWriteEnum.read
+//   io.rw_enum := ReadWriteEnum.read
 }
 
 object MyTopLevelVerilog extends App {

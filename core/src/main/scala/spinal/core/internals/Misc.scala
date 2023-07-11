@@ -47,6 +47,7 @@ object TypeUInt
 object TypeSInt
 object TypeEnum
 object TypeStruct
+object TypeTaggedUnion
 
 
 trait DoubleLinkedContainerElement[SC  <: DoubleLinkedContainer[SC, SE], SE <: DoubleLinkedContainerElement[SC, SE]]{
