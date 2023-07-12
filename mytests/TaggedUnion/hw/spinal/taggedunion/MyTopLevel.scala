@@ -65,6 +65,14 @@ case class MyTopLevel() extends Component {
   io.flag := (counter === 0) | io.cond1
 
 //   io.rw_enum := ReadWriteEnum.read
+  rw_union oneof {
+    value read => {
+      
+    }
+    value write => {
+      
+    }
+  }
 }
 
 object MyTopLevelVerilog extends App {

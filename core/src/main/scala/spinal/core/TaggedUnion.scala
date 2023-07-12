@@ -59,3 +59,4 @@ class TaggedUnionCraft(taggedunion: TaggedUnion) extends Bundle {
 
     SpinalInfo(s"data width: ${data.getWidth}")
 }
+
