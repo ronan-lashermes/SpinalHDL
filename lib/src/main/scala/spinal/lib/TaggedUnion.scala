@@ -59,64 +59,139 @@ class TaggedUnion extends Nameable with ScalaLocated with ValCallbackRec {
 //     val data = Bits(elements.map(_._2.getBitsWidth).max bits)
     
     
-//     def oneof(callback: PartialFunction[Data, Unit]): Unit = {
-//         for ((name, dataType) <- elements) {
-//             when(discriminant === elements.indexWhere(_._1 == name)) {
-//                 val dat = cloneOf(dataType)
-//                 dat.assignFromBits(data)
-//                 callback(dat)
-//             }
-//         }
-//     }
+    // def oneof(callback: PartialFunction[Data, Unit]): Unit = {
+    //     for ((name, dataType) <- elements) {
+    //         when(discriminant === elements.indexWhere(_._1 == name)) {
+    //             val dat = cloneOf(dataType)
+    //             dat.assignFromBits(data)
+    //             callback(dat)
+    //         }
+    //     }
+    // }
 // }
 
-class TaggedUnionCraft(elements: ArrayBuffer[(String, _ <: Data)]) extends Bundle {
+class TaggedUnionCraft(elements: ArrayBuffer[(String, _ <: Data)]) extends Bundle with IMasterSlave {
     val discriminant = UInt(log2Up(elements.length) bits)
 
     val inputBitWidth = elements.flatMap(_._2.flatten.filter(_.isInput)).map(_.getBitsWidth).reduceOption(Math.max).getOrElse(0)
     val outputBitWidth = elements.flatMap(_._2.flatten.filter(_.isOutput)).map(_.getBitsWidth).reduceOption(Math.max).getOrElse(0)
-    val inoutBitWidth = elements.flatMap(_._2.flatten.filter(_.isInOut)).map(_.getBitsWidth).reduceOption(Math.max).getOrElse(0)
     val directionlessBitWidth = elements.flatMap(_._2.flatten.filter(_.isDirectionLess)).map(_.getBitsWidth).reduceOption(Math.max).getOrElse(0)
 
-    val dataIn = (inputBitWidth > 0) generate (in Bits(inputBitWidth bits))
-    val dataOut = (outputBitWidth > 0) generate (out Bits(outputBitWidth bits))
-    val dataInOut = (inoutBitWidth > 0) generate (inout Bits(inoutBitWidth bits))
+    val dataIn = (inputBitWidth > 0) generate (Bits(inputBitWidth bits))
+    val dataOut = (outputBitWidth > 0) generate (Bits(outputBitWidth bits))
     val dataDirectionLess = (directionlessBitWidth > 0) generate Bits(directionlessBitWidth bits)
+    var isMaster: Boolean = false
 
-    def oneof(callback: PartialFunction[Data, Unit]): Unit = {
-        var cursors = Map[String, Int](
-            "in" -> 0,
-            "out" -> 0,
-            "inout" -> 0,
-            "directionless" -> 0
-        )
+    SpinalInfo(s"inputBitWidth: ${inputBitWidth}, outputBitWidth: ${outputBitWidth}, directionlessBitWidth: ${directionlessBitWidth}")
+
+    if (isMaster) {
+        dataOut.assignDontCare()
+        // dataOut := 0
+    }
+    else {
+        dataIn.assignDontCare()
+        // dataIn := 0
+    }
+
+    // def oneof(callback: PartialFunction[Data, Unit]): Unit = {
+    def oneof(callback: Data => Unit): Unit = {
+        
+
+
+        // if (isMaster) {
+        //     dataOut.assignDontCare()
+        //     // dataOut := 0
+        // }
+        // else {
+        //     dataIn.assignDontCare()
+        //     // dataIn := 0
+        // }
 
         for ((name, dataType) <- elements) {
+
+            var cursors = Map[String, Int](
+                "in" -> 0,
+                "out" -> 0,
+                "directionless" -> 0
+            )
+
+            val dat = cloneOf(dataType)
+
             when(discriminant === elements.indexWhere(_._1 == name)) {
-                val dat = cloneOf(dataType)
-                val flatData = dat.flatten
-                for (data <- flatData) {
-                    val direction = data.getDirection()
+            
+                dat.flattenForeach { data =>
+                    
+                    val direction = if (data.getDirection == null) { dat.getDirection } else { data.getDirection }
                     val bitWidth = data.getBitsWidth
+                    data.setAsDirectionLess()
+                    
+                    // SpinalInfo(s"TaggedUnionElement: $name, width: ${bitWidth}, ref direction: $direction, parent direction: ${dataType.getDirection}")
                     direction match {
-                        case d if d.isInput && dataIn.isDefined => 
-                            data.assignFromBits(dataIn.get(cursors("in"), cursors("in") + bitWidth - 1))
+                        case `in` if (dataIn != null) => 
+                            if (isMaster) {
+                                data.assignFromBits(dataIn(cursors("in"), bitWidth bits))
+                            }
+                            else {
+                                dataIn(cursors("in"), bitWidth bits) := data.asBits
+                            }
+                            
+                            SpinalInfo(s"dataIn assign for ${name}, cursor: ${cursors("in")}, bitWidth: ${bitWidth}")
                             cursors = cursors.updated("in", cursors("in") + bitWidth)
-                        case d if d.isOutput && dataOut.isDefined =>
-                            data.assignFromBits(dataOut.get(cursors("out"), cursors("out") + bitWidth - 1))
+                        case `out` if (dataOut != null) =>
+                            if (isMaster) {
+                                dataOut(cursors("out"), bitWidth bits) := data.asBits
+                            }
+                            else {
+                                data.assignFromBits(dataOut(cursors("out"), bitWidth bits))
+                            }
+
+                            // data.assignFromBits(dataOut(cursors("out"), bitWidth bits))
+                            // dataOut(cursors("out"), bitWidth bits) := data.asBits
+                            SpinalInfo(s"dataOut assign for ${name}, cursor: ${cursors("out")}, bitWidth: ${bitWidth}")
                             cursors = cursors.updated("out", cursors("out") + bitWidth)
-                        case d if d.isInOut && dataInOut.isDefined => 
-                            data.assignFromBits(dataInOut.get(cursors("inout"), cursors("inout") + bitWidth - 1))
-                            cursors = cursors.updated("inout", cursors("inout") + bitWidth)
-                        case d if d.isDirectionLess && dataDirectionLess.isDefined =>
-                            data.assignFromBits(dataDirectionLess.get(cursors("directionless"), cursors("directionless") + bitWidth - 1))
+                        case _ if (dataDirectionLess != null) =>
+                            data.assignFromBits(dataDirectionLess(cursors("directionless"), bitWidth bits))
                             cursors = cursors.updated("directionless", cursors("directionless") + bitWidth)
                         case _ =>
                     }
+
+                     
                 }
+
+                // if (isMaster) {
+                //         // write 0 in dataOut until end of dataOut width
+                //     if (dataOut != null) {
+                //         dataOut(cursors("out"), (outputBitWidth - cursors("out")) bits) := 0
+                //         SpinalInfo(s"dataOut assign end for ${name}, cursor: ${cursors("out")}, bitWidth: ${outputBitWidth - cursors("out")}")
+                //     }
+                // }
+                // else {
+                //     // write 0 in dataIn until end of dataIn width
+                //     if (dataIn != null) {
+                //         dataIn(cursors("in"), (inputBitWidth - cursors("in")) bits) := 0
+                //         SpinalInfo(s"dataIn assign end for ${name}, cursor: ${cursors("in")}, bitWidth: ${inputBitWidth - cursors("in")}")
+                //     }
+                // }
+
                 callback(dat)
             }
         }
+    }
+    
+    override def asMaster(): Unit = {
+        isMaster = true
+        out(discriminant)
+        in(dataIn)
+        out(dataOut)
+        out(dataDirectionLess)
+    }
+
+    override def asSlave(): Unit = {
+        isMaster = false
+        in(discriminant)
+        out(dataIn)
+        in(dataOut)
+        in(dataDirectionLess)
     }
 }
 
