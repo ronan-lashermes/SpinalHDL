@@ -33,9 +33,48 @@ import scala.collection.mutable.ArrayBuffer
 class TaggedUnion extends Nameable with ScalaLocated with ValCallbackRec {
     private val elements = ArrayBuffer[(String, _ <: Data)]()
 
+    // There are two dimension to master/slave here:
+    // 1. The master/slave of the TaggedUnion itself
+    // 2. The master/slave of the elements of the TaggedUnion
+    def asMasterOrClone(data: Data): Data = {
+        data match {
+            case masterSlave: IMasterSlave => {
+                masterSlave.asMaster()
+                masterSlave
+            }
+            case _ => data
+        }
+    }
 
-    def apply() = new TaggedUnionCraft(elements)
+    def asSlaveOrClone(data: Data): Data = {
+        data match {
+            case masterSlave: IMasterSlave => {
+                masterSlave.asSlave()
+                masterSlave
+            }
+            case _ => data
+        }
+    }
 
+    def asDirectionLessOrClone(data: Data): Data = {
+        data.setAsDirectionLess()
+        data
+    }
+
+    // def apply() = new TaggedUnionCraft(elements)
+    def asMaster() = {
+        master (new TaggedUnionCraft(elements.map { case (name, data) => (name, asMasterOrClone(data)) }))
+    }
+
+    def asSlave() = {
+        slave (new TaggedUnionCraft(elements.map { case (name, data) => (name, asSlaveOrClone(data)) }))
+    }
+
+    def atRest() = {
+        var ret = new TaggedUnionCraft(elements.map { case (name, data) => (name, asDirectionLessOrClone(data)) })
+        ret.setAsDirectionLess()
+        ret
+    }
 
     override def valCallbackRec(ref: Any, name: String): Unit = ref match {
         case ref : Data => {
@@ -55,13 +94,13 @@ class TaggedUnion extends Nameable with ScalaLocated with ValCallbackRec {
 }
 
 // class TaggedUnionCraft(elements: ArrayBuffer[(String, _ <: Data)]) extends Bundle {
-//     val discriminant = UInt(log2Up(elements.length) bits)
+//     val selector = UInt(log2Up(elements.length) bits)
 //     val data = Bits(elements.map(_._2.getBitsWidth).max bits)
     
     
     // def oneof(callback: PartialFunction[Data, Unit]): Unit = {
     //     for ((name, dataType) <- elements) {
-    //         when(discriminant === elements.indexWhere(_._1 == name)) {
+    //         when(selector === elements.indexWhere(_._1 == name)) {
     //             val dat = cloneOf(dataType)
     //             dat.assignFromBits(data)
     //             callback(dat)
@@ -71,41 +110,71 @@ class TaggedUnion extends Nameable with ScalaLocated with ValCallbackRec {
 // }
 
 class TaggedUnionCraft(elements: ArrayBuffer[(String, _ <: Data)]) extends Bundle with IMasterSlave {
-    val discriminant = UInt(log2Up(elements.length) bits)
+    val selector = UInt(log2Up(elements.length) bits)
 
     val inputBitWidth = elements.flatMap(_._2.flatten.filter(_.isInput)).map(_.getBitsWidth).reduceOption(Math.max).getOrElse(0)
     val outputBitWidth = elements.flatMap(_._2.flatten.filter(_.isOutput)).map(_.getBitsWidth).reduceOption(Math.max).getOrElse(0)
     val directionlessBitWidth = elements.flatMap(_._2.flatten.filter(_.isDirectionLess)).map(_.getBitsWidth).reduceOption(Math.max).getOrElse(0)
 
-    val dataIn = (inputBitWidth > 0) generate (Bits(inputBitWidth bits))
-    val dataOut = (outputBitWidth > 0) generate (Bits(outputBitWidth bits))
+    val dataInMaster = (inputBitWidth > 0) generate (Bits(inputBitWidth bits))
+    val dataOutMaster = (outputBitWidth > 0) generate (Bits(outputBitWidth bits))
     val dataDirectionLess = (directionlessBitWidth > 0) generate Bits(directionlessBitWidth bits)
-    var isMaster: Boolean = false
+    var isMaster: Boolean = false    
 
-    SpinalInfo(s"inputBitWidth: ${inputBitWidth}, outputBitWidth: ${outputBitWidth}, directionlessBitWidth: ${directionlessBitWidth}")
+    def chooseOne(name: String, data: Data): Unit = {
+        val elementData = elements.find(_._1 == name) match {
+            case Some((_, data)) => data
+            case None => throw new IllegalArgumentException(s"No element found with name: $name")
+        }
 
-    if (isMaster) {
-        dataOut.assignDontCare()
-        // dataOut := 0
-    }
-    else {
-        dataIn.assignDontCare()
-        // dataIn := 0
-    }
+        // check type of data against elementData
+        if (data.getClass != elementData.getClass) {
+            throw new IllegalArgumentException(s"Type mismatch: $data is not of type $elementData for element $name")
+        }
 
-    // def oneof(callback: PartialFunction[Data, Unit]): Unit = {
-    def oneof(callback: Data => Unit): Unit = {
+        // here we have correct name and type
         
+        //set selector to index of element
+        selector := elements.indexWhere(_._1 == name)
 
+        val dat = cloneOf(elementData)
+        dat.assignDontCare()
+        dat.flattenForeach { data =>
+            val direction = if (data.getDirection == null) { dat.getDirection } else { data.getDirection }
+            val bitWidth = data.getBitsWidth
+            data.setAsDirectionLess()
+            
+            direction match {
+                case `in` if (dataInMaster != null) => 
+                    if (isMaster) {
+                        data.assignFromBits(dataInMaster(0, bitWidth bits))
+                    }
+                    else {
+                        dataInMaster(0, bitWidth bits) := data.asBits
+                    }
+                case `out` if (dataOutMaster != null) =>
+                    if (isMaster) {
+                        dataOutMaster(0, bitWidth bits) := data.asBits
+                    }
+                    else {
+                        data.assignFromBits(dataOutMaster(0, bitWidth bits))
+                    }
+                case _ if (dataDirectionLess != null) =>
+                    data.assignFromBits(dataDirectionLess(0, bitWidth bits))
+                case _ =>
+            }
+        }
+    }
 
-        // if (isMaster) {
-        //     dataOut.assignDontCare()
-        //     // dataOut := 0
-        // }
-        // else {
-        //     dataIn.assignDontCare()
-        //     // dataIn := 0
-        // }
+    def oneof(callback: Data => Unit): Unit = {
+
+        if (isMaster) {
+            dataOutMaster.assignDontCare()
+            selector.assignDontCare()
+        }
+        else {
+            dataInMaster.assignDontCare()
+        }
 
         for ((name, dataType) <- elements) {
 
@@ -115,39 +184,33 @@ class TaggedUnionCraft(elements: ArrayBuffer[(String, _ <: Data)]) extends Bundl
                 "directionless" -> 0
             )
 
-            val dat = cloneOf(dataType)
 
-            when(discriminant === elements.indexWhere(_._1 == name)) {
-            
+            when(selector === elements.indexWhere(_._1 == name)) {
+                val dat = cloneOf(dataType)
                 dat.flattenForeach { data =>
                     
                     val direction = if (data.getDirection == null) { dat.getDirection } else { data.getDirection }
                     val bitWidth = data.getBitsWidth
                     data.setAsDirectionLess()
                     
-                    // SpinalInfo(s"TaggedUnionElement: $name, width: ${bitWidth}, ref direction: $direction, parent direction: ${dataType.getDirection}")
                     direction match {
-                        case `in` if (dataIn != null) => 
+                        case `in` if (dataInMaster != null) => 
                             if (isMaster) {
-                                data.assignFromBits(dataIn(cursors("in"), bitWidth bits))
+                                data.assignFromBits(dataInMaster(cursors("in"), bitWidth bits))
                             }
                             else {
-                                dataIn(cursors("in"), bitWidth bits) := data.asBits
+                                dataInMaster(cursors("in"), bitWidth bits) := data.asBits
                             }
                             
-                            SpinalInfo(s"dataIn assign for ${name}, cursor: ${cursors("in")}, bitWidth: ${bitWidth}")
                             cursors = cursors.updated("in", cursors("in") + bitWidth)
-                        case `out` if (dataOut != null) =>
+                        case `out` if (dataOutMaster != null) =>
                             if (isMaster) {
-                                dataOut(cursors("out"), bitWidth bits) := data.asBits
+                                dataOutMaster(cursors("out"), bitWidth bits) := data.asBits
                             }
                             else {
-                                data.assignFromBits(dataOut(cursors("out"), bitWidth bits))
+                                data.assignFromBits(dataOutMaster(cursors("out"), bitWidth bits))
                             }
 
-                            // data.assignFromBits(dataOut(cursors("out"), bitWidth bits))
-                            // dataOut(cursors("out"), bitWidth bits) := data.asBits
-                            SpinalInfo(s"dataOut assign for ${name}, cursor: ${cursors("out")}, bitWidth: ${bitWidth}")
                             cursors = cursors.updated("out", cursors("out") + bitWidth)
                         case _ if (dataDirectionLess != null) =>
                             data.assignFromBits(dataDirectionLess(cursors("directionless"), bitWidth bits))
@@ -158,21 +221,6 @@ class TaggedUnionCraft(elements: ArrayBuffer[(String, _ <: Data)]) extends Bundl
                      
                 }
 
-                // if (isMaster) {
-                //         // write 0 in dataOut until end of dataOut width
-                //     if (dataOut != null) {
-                //         dataOut(cursors("out"), (outputBitWidth - cursors("out")) bits) := 0
-                //         SpinalInfo(s"dataOut assign end for ${name}, cursor: ${cursors("out")}, bitWidth: ${outputBitWidth - cursors("out")}")
-                //     }
-                // }
-                // else {
-                //     // write 0 in dataIn until end of dataIn width
-                //     if (dataIn != null) {
-                //         dataIn(cursors("in"), (inputBitWidth - cursors("in")) bits) := 0
-                //         SpinalInfo(s"dataIn assign end for ${name}, cursor: ${cursors("in")}, bitWidth: ${inputBitWidth - cursors("in")}")
-                //     }
-                // }
-
                 callback(dat)
             }
         }
@@ -180,17 +228,17 @@ class TaggedUnionCraft(elements: ArrayBuffer[(String, _ <: Data)]) extends Bundl
     
     override def asMaster(): Unit = {
         isMaster = true
-        out(discriminant)
-        in(dataIn)
-        out(dataOut)
+        out(selector)
+        in(dataInMaster)
+        out(dataOutMaster)
         out(dataDirectionLess)
     }
 
     override def asSlave(): Unit = {
         isMaster = false
-        in(discriminant)
-        out(dataIn)
-        in(dataOut)
+        in(selector)
+        out(dataInMaster)
+        in(dataOutMaster)
         in(dataDirectionLess)
     }
 }

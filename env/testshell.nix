@@ -33,6 +33,7 @@ stdenv.mkDerivation {
 
     # The packages in the `buildInputs` list will be added to the PATH in our shell
     nativeBuildInputs = with pkgs.python310Packages; [
+        pkgs.zlib
         pkgs.verilator
         cocotb
         pkgs.boost
