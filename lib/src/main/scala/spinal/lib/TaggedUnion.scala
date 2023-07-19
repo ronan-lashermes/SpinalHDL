@@ -121,16 +121,24 @@ class TaggedUnionCraft(elements: ArrayBuffer[(String, _ <: Data)]) extends Bundl
     val dataDirectionLess = (directionlessBitWidth > 0) generate Bits(directionlessBitWidth bits)
     var isMaster: Boolean = false    
 
-    def chooseOne(name: String, data: Data): Unit = {
+    if (isMaster) {
+        dataOutMaster.assignDontCare()
+        selector.assignDontCare()
+    }
+    else {
+        dataInMaster.assignDontCare()
+    }
+
+    def chooseOne(name: String)(callback: Data => Unit): Unit = {
         val elementData = elements.find(_._1 == name) match {
             case Some((_, data)) => data
             case None => throw new IllegalArgumentException(s"No element found with name: $name")
         }
 
         // check type of data against elementData
-        if (data.getClass != elementData.getClass) {
-            throw new IllegalArgumentException(s"Type mismatch: $data is not of type $elementData for element $name")
-        }
+        // if (data.getClass != elementData.getClass) {
+        //     throw new IllegalArgumentException(s"Type mismatch: $data is not of type $elementData for element $name")
+        // }
 
         // here we have correct name and type
         
@@ -167,14 +175,6 @@ class TaggedUnionCraft(elements: ArrayBuffer[(String, _ <: Data)]) extends Bundl
     }
 
     def oneof(callback: Data => Unit): Unit = {
-
-        if (isMaster) {
-            dataOutMaster.assignDontCare()
-            selector.assignDontCare()
-        }
-        else {
-            dataInMaster.assignDontCare()
-        }
 
         for ((name, dataType) <- elements) {
 

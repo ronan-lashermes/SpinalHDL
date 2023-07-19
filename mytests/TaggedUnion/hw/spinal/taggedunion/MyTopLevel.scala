@@ -52,43 +52,36 @@ import spinal.lib._
 //     }
 // }
 
-case class ReadPort extends Bundle with IMasterSlave {
+case class ReadPort() extends Bundle  {
     val r1 = in Bits(8 bits)
 
-    def asMaster(): Unit = {
-        in(r1)
-    }
 }
 
-case class WritePort extends Bundle with IMasterSlave {
+case class WritePort() extends Bundle {
     val r2 = in Bits(5 bits)
     val r3 = out Bits(3 bits)
-
-    def asMaster(): Unit = {
-        in(r2)
-        out(r3)
-    }
 }
 
-object ReadWritePort extends TaggedUnion with IMasterSlave {
+object ReadWritePort extends TaggedUnion {
     // read or write -> TaggedUnion
     val read = ReadPort()
     val write = WritePort()
-
-    def asMaster(): Unit = {
-        master(read, write)
-    }
 }
 
 case class MemoryController() extends Component {
     val io = new Bundle {
         val rwPort = ReadWritePort.asMaster()
-        val rw = Bool()
+        val rw = in Bool()
     }
 
-    when(rw) {
-        rwPort.chooseOne {
-            
+    when(io.rw) {
+        io.rwPort.chooseOne("write") {
+            case write: WritePort => {
+                write.r3 := write.r2(2 downto 0)
+            }
+            case _ => {
+                SpinalInfo(s"other")
+            }
         }
     }
 
