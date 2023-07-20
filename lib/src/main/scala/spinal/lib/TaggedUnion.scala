@@ -33,45 +33,18 @@ import scala.collection.mutable.ArrayBuffer
 class TaggedUnion extends Nameable with ScalaLocated with ValCallbackRec {
     private val elements = ArrayBuffer[(String, _ <: Data)]()
 
-    // There are two dimension to master/slave here:
-    // 1. The master/slave of the TaggedUnion itself
-    // 2. The master/slave of the elements of the TaggedUnion
-    def asMasterOrClone(data: Data): Data = {
-        data match {
-            case masterSlave: IMasterSlave => {
-                masterSlave.asMaster()
-                masterSlave
-            }
-            case _ => data
-        }
+
+    def apply() = atRest()
+    def asMaster(): TaggedUnionCraft = {
+        master (new TaggedUnionCraft(elements.map { case (name, data) => (name, TaggedUnion.asMasterOrClone(data)) }))
     }
 
-    def asSlaveOrClone(data: Data): Data = {
-        data match {
-            case masterSlave: IMasterSlave => {
-                masterSlave.asSlave()
-                masterSlave
-            }
-            case _ => data
-        }
+    def asSlave(): TaggedUnionCraft = {
+        slave (new TaggedUnionCraft(elements.map { case (name, data) => (name, TaggedUnion.asSlaveOrClone(data)) }))
     }
 
-    def asDirectionLessOrClone(data: Data): Data = {
-        data.setAsDirectionLess()
-        data
-    }
-
-    // def apply() = new TaggedUnionCraft(elements)
-    def asMaster() = {
-        master (new TaggedUnionCraft(elements.map { case (name, data) => (name, asMasterOrClone(data)) }))
-    }
-
-    def asSlave() = {
-        slave (new TaggedUnionCraft(elements.map { case (name, data) => (name, asSlaveOrClone(data)) }))
-    }
-
-    def atRest() = {
-        var ret = new TaggedUnionCraft(elements.map { case (name, data) => (name, asDirectionLessOrClone(data)) })
+    def atRest(): TaggedUnionCraft = {
+        var ret = new TaggedUnionCraft(elements.map { case (name, data) => (name, TaggedUnion.asDirectionLessOrClone(data)) })
         ret.setAsDirectionLess()
         ret
     }
@@ -109,6 +82,37 @@ class TaggedUnion extends Nameable with ScalaLocated with ValCallbackRec {
     // }
 // }
 
+object TaggedUnion {
+
+    // There are two dimension to master/slave here:
+    // 1. The master/slave of the TaggedUnion itself
+    // 2. The master/slave of the elements of the TaggedUnion
+    def asMasterOrClone(data: Data): Data = {
+        data match {
+            case masterSlave: IMasterSlave => {
+                masterSlave.asMaster()
+                masterSlave
+            }
+            case _ => data
+        }
+    }
+
+    def asSlaveOrClone(data: Data): Data = {
+        data match {
+            case masterSlave: IMasterSlave => {
+                masterSlave.asSlave()
+                masterSlave
+            }
+            case _ => data
+        }
+    }
+
+    def asDirectionLessOrClone(data: Data): Data = {
+        data.setAsDirectionLess()
+        data
+    }
+}
+
 class TaggedUnionCraft(elements: ArrayBuffer[(String, _ <: Data)]) extends Bundle with IMasterSlave {
     val selector = UInt(log2Up(elements.length) bits)
 
@@ -121,29 +125,36 @@ class TaggedUnionCraft(elements: ArrayBuffer[(String, _ <: Data)]) extends Bundl
     val dataDirectionLess = (directionlessBitWidth > 0) generate Bits(directionlessBitWidth bits)
     var isMaster: Boolean = false    
 
-    if (isMaster) {
-        dataOutMaster.assignDontCare()
-        selector.assignDontCare()
+    def default(): Unit = {
+        if (isMaster) {
+            if(outputBitWidth > 0) {
+                dataOutMaster.assignDontCare()
+            }
+            selector.assignDontCare()
+        }
+        else {
+            if(inputBitWidth > 0) {
+                dataInMaster.assignDontCare()
+            }
+        }
     }
-    else {
-        dataInMaster.assignDontCare()
-    }
+
 
     def chooseOne(name: String)(callback: Data => Unit): Unit = {
+
         val elementData = elements.find(_._1 == name) match {
             case Some((_, data)) => data
-            case None => throw new IllegalArgumentException(s"No element found with name: $name")
+            case None => throw new IllegalArgumentException(s"No element found with name: $name, legal names are: ${elements.map(_._1)}")
         }
-
-        // check type of data against elementData
-        // if (data.getClass != elementData.getClass) {
-        //     throw new IllegalArgumentException(s"Type mismatch: $data is not of type $elementData for element $name")
-        // }
-
-        // here we have correct name and type
         
         //set selector to index of element
         selector := elements.indexWhere(_._1 == name)
+
+        var cursors = Map[String, Int](
+            "in" -> 0,
+            "out" -> 0,
+            "directionless" -> 0
+        )
 
         val dat = cloneOf(elementData)
         dat.assignDontCare()
@@ -155,26 +166,33 @@ class TaggedUnionCraft(elements: ArrayBuffer[(String, _ <: Data)]) extends Bundl
             direction match {
                 case `in` if (dataInMaster != null) => 
                     if (isMaster) {
-                        data.assignFromBits(dataInMaster(0, bitWidth bits))
+                        data.assignFromBits(dataInMaster(cursors("in"), bitWidth bits))
                     }
                     else {
-                        dataInMaster(0, bitWidth bits) := data.asBits
+                        dataInMaster(cursors("in"), bitWidth bits) := data.asBits
                     }
+                    
+                    cursors = cursors.updated("in", cursors("in") + bitWidth)
                 case `out` if (dataOutMaster != null) =>
                     if (isMaster) {
-                        dataOutMaster(0, bitWidth bits) := data.asBits
+                        dataOutMaster(cursors("out"), bitWidth bits) := data.asBits
                     }
                     else {
-                        data.assignFromBits(dataOutMaster(0, bitWidth bits))
+                        data.assignFromBits(dataOutMaster(cursors("out"), bitWidth bits))
                     }
+
+                    cursors = cursors.updated("out", cursors("out") + bitWidth)
                 case _ if (dataDirectionLess != null) =>
-                    data.assignFromBits(dataDirectionLess(0, bitWidth bits))
+                    data.assignFromBits(dataDirectionLess(cursors("directionless"), bitWidth bits))
+                    cursors = cursors.updated("directionless", cursors("directionless") + bitWidth)
                 case _ =>
             }
         }
+
+        callback(dat)
     }
 
-    def oneof(callback: Data => Unit): Unit = {
+    def oneof(callback: (String, Data) => Unit): Unit = {
 
         for ((name, dataType) <- elements) {
 
@@ -221,12 +239,20 @@ class TaggedUnionCraft(elements: ArrayBuffer[(String, _ <: Data)]) extends Bundl
                      
                 }
 
-                callback(dat)
+                callback(name, dat)
             }
         }
     }
     
     override def asMaster(): Unit = {
+        // val newElements = elements.map { case (name, data) => (name, TaggedUnion.asMasterOrClone(data)) }
+        // val newCraft = new TaggedUnionCraft(newElements)
+        // newCraft.isMaster = true
+        // out(newCraft.selector)
+        // in(newCraft.dataInMaster)
+        // out(newCraft.dataOutMaster)
+        // out(newCraft.dataDirectionLess)
+
         isMaster = true
         out(selector)
         in(dataInMaster)
@@ -240,6 +266,15 @@ class TaggedUnionCraft(elements: ArrayBuffer[(String, _ <: Data)]) extends Bundl
         out(dataInMaster)
         in(dataOutMaster)
         in(dataDirectionLess)
+    }
+}
+
+object TaggedUnionCraft {
+    private def setAsMasterIfPossible(data: Data): Unit = {
+        data match {
+            case masterSlave: IMasterSlave => masterSlave.asMaster()
+            case _ =>
+        }
     }
 }
 

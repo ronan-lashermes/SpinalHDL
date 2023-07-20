@@ -25,7 +25,7 @@ import spinal.lib._
 //     val read = ReadRequest()
 //     val write = WriteRequest()
 
-//     def asMaster(): Unit = {
+//     override def asMaster(): Unit = {
 //         out(read, write)
 //     }
 // }
@@ -35,18 +35,18 @@ import spinal.lib._
 //     val read = ReadAnswer()
 //     val write = WriteAnswer()
 
-//     def asMaster(): Unit = {
+//     override def asMaster(): Unit = {
 //         out(read, write)
 //     }
 // }
 
-// case class ReadWritePort extends Bundle with IMasterSlave{
+// case class ReadWritePort() extends Bundle with IMasterSlave{
 //     // request and answer can be simultaneous -> Bundle
 //     val request = Stream(ReadWriteRequest())
 //     // answer with content only if read request
 //     val answer = Flow(ReadWriteAnswer())
 
-//     def asMaster(): Unit = {
+//     override def asMaster(): Unit = {
 //         master(request)
 //         slave(answer)
 //     }
@@ -70,10 +70,12 @@ object ReadWritePort extends TaggedUnion {
 
 case class MemoryController() extends Component {
     val io = new Bundle {
+        // val rwPort = ReadWritePort.asSlave()
         val rwPort = ReadWritePort.asMaster()
-        val rw = in Bool()
+        val rw = in (Bool())
     }
 
+    io.rwPort.default()
     when(io.rw) {
         io.rwPort.chooseOne("write") {
             case write: WritePort => {
