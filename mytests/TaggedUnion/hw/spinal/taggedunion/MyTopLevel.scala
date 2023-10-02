@@ -21,11 +21,8 @@ case class WriteAnswer() extends Bundle {
 }
 
 object ReadWriteRequest extends TaggedUnion  {
-    // read or write -> TaggedUnion
     val read = ReadRequest()
     val write = WriteRequest()
-
-   
 }
 
 object ReadWriteAnswer extends TaggedUnion {
