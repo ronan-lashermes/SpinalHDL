@@ -1,25 +1,25 @@
-# RFC: Hardware sum types (aka TaggedUnion)
+# RFC: Hardware Sum Types (aka TaggedUnion)
 
 ## Introduction 
 
-The modern programming trend is to leverage the type system to ensure program correctness whenever possible.
-With SpinalHDL, this trend can be used for hardware type.
+Modern programming trends leverage the type system to ensure program correctness whenever possible.
+With SpinalHDL, this trend can be applied to hardware types.
 
-The principle P1 can be stated.
+Principle P1 can be stated as:
 
-> The type of a value must designate its purpose in the most specific way.
+> The type of a value should designate its purpose in the most specific way possible.
 
-A simple example for a signal that carry the information if a request is a read or a write one.
+Consider a simple example for a signal that indicates whether a request is a read or a write:
 
 ```scala
 val read_write = Bool() //incorrect, does not follow P1
 
-when(read_write === True) { // read or write ?
+when(read_write === True) { // read or write?
     //...
 }
 ```
 
-A better way to define this variable while satisfying P1 would be
+A better way to define this variable, while satisfying P1, would be:
 
 ```scala
 object ReadWrite extends SpinalEnum {
@@ -33,28 +33,30 @@ when(read_write === read) { //unambiguous
 }
 ```
 
-This is not about correctness, both implementations are. But the second one leverages the type system to remove ambiguity, thus lowering the verification work.
+This isn't about correctness, as both implementations are correct. However, the second one leverages the type system to remove ambiguity, thus reducing the verification effort.
 
 
-## What are sum types / tagged unions
+## What Are Sum Types / Tagged Unions?
 
-A product type is a composite type that includes a type A **and** a type B. This is your regular SpinalHDL’s Bundle.
-A sum type is a composite type that includes a type A **or** a type B.
+A product type is a composite type that includes both type A **and** type B. This is the regular SpinalHDL’s Bundle.
+A sum type, on the other hand, is a composite type that includes either type A **or** type B.
 
-The most famous implementation of sum types is probably in rust
+The most well-known implementation of sum types is probably in Rust:
+
 ```rust
 enum ReadWriteRequest {
     Read(ReadRequest),
     Write(WriteRequest)
 }
 ```
-Our rust example defines a *ReadWriteRequest* type that can either be a *Read* with type *ReadRequest* or a *Write* with *WriteRequest*, but not both at the same time.
 
-A hardware sum type would be the equivalent : for the I/O of a Read/Write port, the type would specify that only one of the two is valid at a given time.
-For a data in registers, the type would specify that only one of the two is valid.
+Our Rust example defines a *ReadWriteRequest* type that can either be a *Read* with type *ReadRequest* or a *Write* with type *WriteRequest*, but not both simultaneously.
 
-The goal is to have the type system describes more precisely the hardware and the associated correct semantics.
-There are several possible hardware way to implement a sum type, we will discuss this below.
+A hardware sum type would be equivalent: for the I/O of a Read/Write port, the type would specify that only one of the two is valid at a given time.
+For data in registers, the type would specify that only one of the two is valid.
+
+The goal is for the type system to describe the hardware and its associated semantics more precisely.
+There are several possible hardware ways to implement a sum type, which we will discuss below.
 
 ## Implementation ideas (not working for now)
 
