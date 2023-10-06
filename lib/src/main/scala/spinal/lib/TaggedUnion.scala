@@ -126,109 +126,109 @@ class TaggedUnionCraft(elements: ArrayBuffer[(String, _ <: Data)]) extends Bundl
     }
 
 
-    def chooseOne(name: String)(callback: Data => Unit): Unit = {
+    // def chooseOne(name: String)(callback: Data => Unit): Unit = {
 
-        val elementData = elements.find(_._1 == name) match {
-            case Some((_, data)) => data
-            case None => throw new IllegalArgumentException(s"No element found with name: $name, legal names are: ${elements.map(_._1)}")
-        }
+    //     val elementData = elements.find(_._1 == name) match {
+    //         case Some((_, data)) => data
+    //         case None => throw new IllegalArgumentException(s"No element found with name: $name, legal names are: ${elements.map(_._1)}")
+    //     }
         
-        //set selector to index of element
-        selector := elements.indexWhere(_._1 == name)
+    //     //set selector to index of element
+    //     selector := elements.indexWhere(_._1 == name)
 
-        var cursors = Map[String, Int](
-            "in" -> 0,
-            "out" -> 0,
-            "directionless" -> 0
-        )
+    //     var cursors = Map[String, Int](
+    //         "in" -> 0,
+    //         "out" -> 0,
+    //         "directionless" -> 0
+    //     )
 
-        val dat = cloneOf(elementData)
-        dat.assignDontCare()
-        dat.flattenForeach { data =>
-            val direction = if (data.getDirection == null) { dat.getDirection } else { data.getDirection }
-            val bitWidth = data.getBitsWidth
-            data.setAsDirectionLess()
+    //     val dat = cloneOf(elementData)
+    //     dat.assignDontCare()
+    //     dat.flattenForeach { data =>
+    //         val direction = if (data.getDirection == null) { dat.getDirection } else { data.getDirection }
+    //         val bitWidth = data.getBitsWidth
+    //         data.setAsDirectionLess()
             
-            direction match {
-                case `in` if (dataInMaster != null) => 
-                    if (isMaster) {
-                        data.assignFromBits(dataInMaster(cursors("in"), bitWidth bits))
-                    }
-                    else {
-                        dataInMaster(cursors("in"), bitWidth bits) := data.asBits
-                    }
+    //         direction match {
+    //             case `in` if (dataInMaster != null) => 
+    //                 if (isMaster) {
+    //                     data.assignFromBits(dataInMaster(cursors("in"), bitWidth bits))
+    //                 }
+    //                 else {
+    //                     dataInMaster(cursors("in"), bitWidth bits) := data.asBits
+    //                 }
                     
-                    cursors = cursors.updated("in", cursors("in") + bitWidth)
-                case `out` if (dataOutMaster != null) =>
-                    if (isMaster) {
-                        dataOutMaster(cursors("out"), bitWidth bits) := data.asBits
-                    }
-                    else {
-                        data.assignFromBits(dataOutMaster(cursors("out"), bitWidth bits))
-                    }
+    //                 cursors = cursors.updated("in", cursors("in") + bitWidth)
+    //             case `out` if (dataOutMaster != null) =>
+    //                 if (isMaster) {
+    //                     dataOutMaster(cursors("out"), bitWidth bits) := data.asBits
+    //                 }
+    //                 else {
+    //                     data.assignFromBits(dataOutMaster(cursors("out"), bitWidth bits))
+    //                 }
 
-                    cursors = cursors.updated("out", cursors("out") + bitWidth)
-                case _ if (dataDirectionLess != null) =>
-                    data.assignFromBits(dataDirectionLess(cursors("directionless"), bitWidth bits))
-                    cursors = cursors.updated("directionless", cursors("directionless") + bitWidth)
-                case _ =>
-            }
-        }
+    //                 cursors = cursors.updated("out", cursors("out") + bitWidth)
+    //             case _ if (dataDirectionLess != null) =>
+    //                 data.assignFromBits(dataDirectionLess(cursors("directionless"), bitWidth bits))
+    //                 cursors = cursors.updated("directionless", cursors("directionless") + bitWidth)
+    //             case _ =>
+    //         }
+    //     }
 
-        callback(dat)
-    }
+    //     callback(dat)
+    // }
 
-    def oneof(callback: (String, Data) => Unit): Unit = {
+    // def oneof(callback: (String, Data) => Unit): Unit = {
 
-        for ((name, dataType) <- elements) {
+    //     for ((name, dataType) <- elements) {
 
-            var cursors = Map[String, Int](
-                "in" -> 0,
-                "out" -> 0,
-                "directionless" -> 0
-            )
+    //         var cursors = Map[String, Int](
+    //             "in" -> 0,
+    //             "out" -> 0,
+    //             "directionless" -> 0
+    //         )
 
 
-            when(selector === elements.indexWhere(_._1 == name)) {
-                val dat = cloneOf(dataType)
-                dat.flattenForeach { data =>
+    //         when(selector === elements.indexWhere(_._1 == name)) {
+    //             val dat = cloneOf(dataType)
+    //             dat.flattenForeach { data =>
                     
-                    val direction = if (data.getDirection == null) { dat.getDirection } else { data.getDirection }
-                    val bitWidth = data.getBitsWidth
-                    data.setAsDirectionLess()
+    //                 val direction = if (data.getDirection == null) { dat.getDirection } else { data.getDirection }
+    //                 val bitWidth = data.getBitsWidth
+    //                 data.setAsDirectionLess()
                     
-                    direction match {
-                        case `in` if (dataInMaster != null) => 
-                            if (isMaster) {
-                                data.assignFromBits(dataInMaster(cursors("in"), bitWidth bits))
-                            }
-                            else {
-                                dataInMaster(cursors("in"), bitWidth bits) := data.asBits
-                            }
+    //                 direction match {
+    //                     case `in` if (dataInMaster != null) => 
+    //                         if (isMaster) {
+    //                             data.assignFromBits(dataInMaster(cursors("in"), bitWidth bits))
+    //                         }
+    //                         else {
+    //                             dataInMaster(cursors("in"), bitWidth bits) := data.asBits
+    //                         }
                             
-                            cursors = cursors.updated("in", cursors("in") + bitWidth)
-                        case `out` if (dataOutMaster != null) =>
-                            if (isMaster) {
-                                dataOutMaster(cursors("out"), bitWidth bits) := data.asBits
-                            }
-                            else {
-                                data.assignFromBits(dataOutMaster(cursors("out"), bitWidth bits))
-                            }
+    //                         cursors = cursors.updated("in", cursors("in") + bitWidth)
+    //                     case `out` if (dataOutMaster != null) =>
+    //                         if (isMaster) {
+    //                             dataOutMaster(cursors("out"), bitWidth bits) := data.asBits
+    //                         }
+    //                         else {
+    //                             data.assignFromBits(dataOutMaster(cursors("out"), bitWidth bits))
+    //                         }
 
-                            cursors = cursors.updated("out", cursors("out") + bitWidth)
-                        case _ if (dataDirectionLess != null) =>
-                            data.assignFromBits(dataDirectionLess(cursors("directionless"), bitWidth bits))
-                            cursors = cursors.updated("directionless", cursors("directionless") + bitWidth)
-                        case _ =>
-                    }
+    //                         cursors = cursors.updated("out", cursors("out") + bitWidth)
+    //                     case _ if (dataDirectionLess != null) =>
+    //                         data.assignFromBits(dataDirectionLess(cursors("directionless"), bitWidth bits))
+    //                         cursors = cursors.updated("directionless", cursors("directionless") + bitWidth)
+    //                     case _ =>
+    //                 }
 
                      
-                }
+    //             }
 
-                callback(name, dat)
-            }
-        }
-    }
+    //             callback(name, dat)
+    //         }
+    //     }
+    // }
     
     override def asMaster(): Unit = {
 

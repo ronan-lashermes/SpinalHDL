@@ -15,9 +15,13 @@ let
         # Descriptive name to make the store path easier to identify                
         name = "pinned_nix_packages";                                                 
         url = "https://github.com/nixos/nixpkgs/";                       
-        ref = "nixos-23.05";                     
-        rev = "e11142026e2cef35ea52c9205703823df225c947";                                           
+        ref = "nixos-22.05";                     
+        rev = "ce6aa13369b667ac2542593170993504932eb836";                                           
     }) {};
+
+    riscv-toolchain = (import ./riscv-medany-multilib-toolchain-custom.nix);
+    # riscv-toolchain = (import ./riscv-medany-multilib-toolchain.nix);
+
 in
 
 with import <nixpkgs> { 
@@ -28,22 +32,34 @@ with import <nixpkgs> {
 
 # Make a new "derivation" that represents our shell
 stdenv.mkDerivation {
-    name = "spinalhdl-test";
+    name = "naxriscv-build";
 
-    SPINALHDL = toString ../.;
+    SPINALHDL = toString ../SpinalHDL;
+    NAXRISCV = toString ../.;
+    # SIM = ../src/test/cpp/naxriscv/obj_dir/VNaxRiscv;
+    RISCV = toString riscv-toolchain;
+    RISCV_PATH = toString riscv-toolchain;
 
     # The packages in the `buildInputs` list will be added to the PATH in our shell
-    nativeBuildInputs = with pkgs.python310Packages; [
-        pkgs.zlib
-        pkgs.verilator
-        cocotb
-        pkgs.boost
-        pkgs.sbt
-        pkgs.verilog
-        pkgs.ghdl
-        find-libpython
+    nativeBuildInputs = with pkgs; [
+        spike
+        elfio
+        verilator
+        sbt
+        zlib
+        SDL2
+        dtc
+        boost
+        python3
+#needed by the gcc install
+        isl
+        libmpc
+        riscv-toolchain
     ];
 
 
+    shellHook = ''
+        export PATH=$PATH:$RISCV/bin
+    '';
 
 }
