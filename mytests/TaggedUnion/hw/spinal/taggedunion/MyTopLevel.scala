@@ -1,35 +1,25 @@
-object UnionPlay extends App{
-    SpinalVerilog(new Component {
-        case class TypeA() extends Bundle {
-            val x, y, z = UInt(8 bits)
-        }
+package taggedunion
 
-        case class TypeB() extends Bundle {
-            val l, m, n = UInt(4 bits)
-            val rgb = Rgb(2,3,4)
-        }
+import spinal.core._
+import spinal.lib._
 
-        case class MyUnion() extends Union{
-            val a = newElement(TypeA())
-            val b = newElement(TypeB())
-        }
+  case class MyTaggedUnion() extends TaggedUnion{
+      val a = newElement(TypeA())
+      val b = newElement(TypeB())
+    }
 
-        val miaou, wuff = MyUnion()
-        wuff := miaou
-        miaou.raw := 0
-        //    val x = miaou.raw(4, 10 bits)
-        //    val y = B"1001"
-        //    x := y
-        val b = miaou.b.get()
-        //    b.m := U"1010"
-        //    b.m(2) := True
-        b.m(2 downto 1) := U"10"
-        val sel = in UInt(2 bits)
-        b.rgb.g(1) := False
-        b.rgb.b(sel) := True
-        miaou.a.get().z(sel, 2 bits) := U"11"
 
-        miaou.a.y := U(4)
-        miaou.a.x := U(4, 4 bits)
-    })
+    val mtu = MyTaggedUnion()
+    mtu.setTag(mtu.b)
+    mtu.union.raw := 0
+    mtu.b.m := 12
+
+    val rawrr = UInt(10 bits)
+    mtu.sMatch{
+      case mtu.a => rawrr := mtu.a.z.resized
+      case mtu.b => rawrr := mtu.b.n.resized
+    }
+
+object MemoryControllerVerilog extends App {
+    Config.spinal.generateVerilog(MemoryController())
 }
