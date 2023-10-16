@@ -1,101 +1,35 @@
-package taggedunion
+object UnionPlay extends App{
+    SpinalVerilog(new Component {
+        case class TypeA() extends Bundle {
+            val x, y, z = UInt(8 bits)
+        }
 
-import spinal.core._
-import spinal.lib._
+        case class TypeB() extends Bundle {
+            val l, m, n = UInt(4 bits)
+            val rgb = Rgb(2,3,4)
+        }
 
-case class ReadRequest() extends Bundle {
-    val add = UInt(8 bits)
+        case class MyUnion() extends Union{
+            val a = newElement(TypeA())
+            val b = newElement(TypeB())
+        }
+
+        val miaou, wuff = MyUnion()
+        wuff := miaou
+        miaou.raw := 0
+        //    val x = miaou.raw(4, 10 bits)
+        //    val y = B"1001"
+        //    x := y
+        val b = miaou.b.get()
+        //    b.m := U"1010"
+        //    b.m(2) := True
+        b.m(2 downto 1) := U"10"
+        val sel = in UInt(2 bits)
+        b.rgb.g(1) := False
+        b.rgb.b(sel) := True
+        miaou.a.get().z(sel, 2 bits) := U"11"
+
+        miaou.a.y := U(4)
+        miaou.a.x := U(4, 4 bits)
+    })
 }
-
-case class WriteRequest() extends Bundle {
-    val add = UInt(8 bits)
-    val data = Bits(32 bits)
-}
-
-case class ReadAnswer() extends Bundle {
-    val data = Bits(32 bits)
-}
-
-case class WriteAnswer() extends Bundle {
-    val ack = Bits(0 bits) // label has no hardware existence
-}
-
-object ReadWriteRequest extends TaggedUnion  {
-    val read = ReadRequest()
-    val write = WriteRequest()
-}
-
-object ReadWriteAnswer extends TaggedUnion {
-    // read or write -> TaggedUnion
-    val read = ReadAnswer()
-    val write = WriteAnswer()
-}
-
-case class ReadWritePort() extends Bundle with IMasterSlave{
-    // request and answer can be simultaneous -> Bundle
-    val request = Stream(ReadWriteRequest.asMaster())
-    // answer with content only if read request
-    val answer = Flow(ReadWriteAnswer.asSlave())
-
-    override def asMaster(): Unit = {
-        master(request)
-        slave(answer)
-    }
-}
-
-// case class ReadPort() extends Bundle  {
-//     val r1 = in Bits(8 bits)
-
-// }
-
-// case class WritePort() extends Bundle {
-//     val r2 = in Bits(5 bits)
-//     val r3 = out Bits(3 bits)
-// }
-
-// object ReadWritePort extends TaggedUnion {
-//     // read or write -> TaggedUnion
-//     val read = ReadPort()
-//     val write = WritePort()
-// }
-
-case class MemoryController() extends Component {
-    val io = new Bundle {
-        val rwPort = slave (ReadWritePort())
-        // val rwPort = ReadWritePort.asMaster()
-        // val rw = in (Bool())
-    }
-
-    // io.rwPort.default()
-    // when(io.rw) {
-    //     io.rwPort.chooseOne("write") {
-    //         case write: WritePort => {
-    //             write.r3 := write.r2(2 downto 0)
-    //         }
-    //         case _ => {
-    //             SpinalInfo(s"other")
-    //         }
-    //     }
-    // }
-
-    // val memory = Mem(Bits(32 bits), 256)
-
-    // val request_valid = io.rwPort.request.valid
-    // io.rwPort.request.payload.oneof {
-    //     case read: ReadRequest => {
-            
-    //     }
-    //     case write: WriteRequest => {
-            
-    //     }
-    //     case _ => {
-    //         SpinalInfo(s"other")
-    //     }
-    // }
-}
-
-object MemoryControllerVerilog extends App {
-    Config.spinal.generateVerilog(MemoryController())
-}
-
- 
