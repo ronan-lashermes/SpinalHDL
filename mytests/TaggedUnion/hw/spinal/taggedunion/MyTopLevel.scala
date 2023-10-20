@@ -3,22 +3,25 @@ package taggedunion
 import spinal.core._
 import spinal.lib._
 
-  case class MyTaggedUnion() extends TaggedUnion{
-      val a = newElement(TypeA())
-      val b = newElement(TypeB())
+
+case class TypeA() extends Bundle {
+    val x, y, z = UInt(8 bits)
+}
+
+case class TypeB() extends Bundle {
+    val l, m, n = UInt(4 bits)
+    val r = SInt(2 bits)
+}
+
+case class MemoryController() extends Component {
+    val io = new Bundle {
+      
     }
 
+    val AorB = HardType.union(TypeA(), TypeB())
 
-    val mtu = MyTaggedUnion()
-    mtu.setTag(mtu.b)
-    mtu.union.raw := 0
-    mtu.b.m := 12
-
-    val rawrr = UInt(10 bits)
-    mtu.sMatch{
-      case mtu.a => rawrr := mtu.a.z.resized
-      case mtu.b => rawrr := mtu.b.n.resized
-    }
+    val v = AorB()
+}
 
 object MemoryControllerVerilog extends App {
     Config.spinal.generateVerilog(MemoryController())

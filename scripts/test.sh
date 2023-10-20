@@ -2,4 +2,4 @@
 #!nix-shell ../env/testshell.nix -i bash --pure
 
 cd "$SPINALHDL/mytests/TaggedUnion"
-sbt "runMain taggedunion.MemoryControllerVerilog"
+sbt -J-Xmx4G "runMain taggedunion.MemoryControllerVerilog"
