@@ -1,37 +1,30 @@
-package spinal.core
+package spinal.lib
 
+import spinal.core._
 import spinal.core.internals._
-import spinal.idslplugin.PostInitCallback
+import spinal.lib._
+import spinal.idslplugin.{Location, ValCallback}
 
-class TaggedUnion extends Bundle with PostInitCallback{
-    var tag : UInt = null
-    // val union = new Union(selfBuild = false)
-    val union = new Union()
+import scala.collection.mutable.ArrayBuffer
 
-    def newElement[T <: Data](t: HardType[T]) = {
-        union.newElement(t)
-    }
 
-    def build(): Unit = {
-        union.build()
-        tag = UInt(log2Up(union.uTypes.size) bits)
-        valCallbackRec(tag, "tag")
-    }
 
-    override def postInitCallback() = {
-        build()
-        this
-    }
+// Tagged Union definition
+class TaggedUnion extends Nameable with ScalaLocated with ValCallbackRec {
+    val elements = ArrayBuffer[(String, _ <: Data)]()
 
-    def setTag(e : UnionElement[_ <: Data]) = {
-        tag := union.uTypes.indexOf(e)
-    }
-    
-    def sMatch(body : Any => Unit): Unit = {
-        switch(tag){
-            for((e, i) <- union.uTypes.zipWithIndex) is(i){
-                body(e)
+    override def valCallbackRec(ref: Any, name: String): Unit = ref match {
+        case ref : Data => {
+            // Add the new item to `elements`
+            elements += name -> ref
+            // If certain conditions are met (as defined by `OwnableRef.proposal(ref, this)`), 
+            // set a partial name for the new item
+            if(OwnableRef.proposal(ref, this)) {
+                ref.setPartialName(name, Nameable.DATAMODEL_WEAK)
             }
+        }
+        // If `ref` is not an instance of `Data`, do nothing
+        case ref => {
         }
     }
 }

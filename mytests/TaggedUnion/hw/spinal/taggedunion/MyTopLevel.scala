@@ -13,6 +13,11 @@ case class TypeB() extends Bundle {
     val r = SInt(2 bits)
 }
 
+case class TypeAorB() extends TaggedUnion {
+    val a = TypeA()
+    val b = TypeB()
+}
+
 case class MemoryController() extends Component {
     val io = new Bundle {
         val sel = in Bool()
@@ -23,6 +28,10 @@ case class MemoryController() extends Component {
 
     val v = AorB()
     v := 0
+
+    val taggedUnion = TypeAorB()
+
+    println(s"v = ${taggedUnion.elements}")
 
     val a: TypeA = v.aliasAs(TypeA())
     val b: TypeB = v.aliasAs(TypeB())
