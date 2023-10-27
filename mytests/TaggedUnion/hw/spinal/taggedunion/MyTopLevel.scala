@@ -38,7 +38,7 @@ case class MemoryController() extends Component {
 
     when(io.sel) {
         taggedUnion.chooseOne(taggedUnion.a1) { 
-            a1 => {
+            a1: TypeA => {
                 a1.x := 1
                 a1.y := 2
                 a1.z := 3

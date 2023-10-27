@@ -60,3 +60,19 @@ class TaggedUnion(var encoding: SpinalEnumEncoding = native) extends Bundle with
     }
 }
 
+// Use Composition Instead of Inheritance: Instead of having TaggedUnion directly extend Bundle, you could have a member of TaggedUnion that is a Bundle. This way, only the members of that inner Bundle would be translated to HDL, and the outer TaggedUnion class can have additional members that don't get translated.
+
+// For example:
+
+// scala
+
+// class TaggedUnion(...) {
+//     class TaggedUnionIO extends Bundle {
+//         val tag = tagEnum()
+//         val nodir = HardType.unionSeq(...)
+//     }
+//     val io = new TaggedUnionIO
+//     // other TaggedUnion code...
+// }
+
+// You would then reference tag and nodir as taggedUnion.io.tag and taggedUnion.io.nodir respectively.
