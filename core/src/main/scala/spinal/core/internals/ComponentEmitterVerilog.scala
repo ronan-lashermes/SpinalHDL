@@ -85,10 +85,10 @@ class ComponentEmitterVerilog(
       val EDAcomment = s"${emitCommentAttributes(baseType.instanceAttributes)}"  //like "/* verilator public */"
 
       if(outputsToBufferize.contains(baseType) || baseType.isInput){
-        portMaps += f"${syntax}${dir}%6s ${""}%3s ${section}%-8s ${name}${EDAcomment}${comma}"
+        portMaps += f"${syntax}${dir}%6s wire ${section}%-8s ${name}${EDAcomment}${comma}"
       } else {
-        val isReg   = if(signalNeedProcess(baseType)) "reg" else ""
-        portMaps += f"${syntax}${dir}%6s ${isReg}%3s ${section}%-8s ${name}${EDAcomment}${comma}"
+        val isReg   = if(signalNeedProcess(baseType)) "reg" else "wire"
+        portMaps += f"${syntax}${dir}%6s ${isReg}%-4s ${section}%-8s ${name}${EDAcomment}${comma}"
       }
     }
   }
@@ -1050,10 +1050,10 @@ class ComponentEmitterVerilog(
             " = $urandom"
           case bv: BitVector =>
             val randCount = (bv.getBitsWidth+31)/32
-            s" = {${randCount}{$$urandom}}"
+            s" = {${(Array.fill(randCount)("$urandom")).mkString(",")}}"
           case e: SpinalEnumCraft[_] =>
             val randCount = (e.getBitsWidth+31)/32
-            s" = {${randCount}{$$urandom}}"
+            s" = {${(Array.fill(randCount)("$urandom")).mkString(",")}}"
         }
       }
     }
@@ -1440,6 +1440,7 @@ end
       e match {
     //    case node: Literal => applyTo(node)
         case node: Resize                           => applyTo(node)
+        case node: Literal                          => // Avoid triggering on SInt literals
         case node if node.getTypeObject == TypeSInt => applyTo(node)
         case node: Operator.UInt.Add                => applyTo(node)
         case node: Operator.UInt.Sub                => applyTo(node)

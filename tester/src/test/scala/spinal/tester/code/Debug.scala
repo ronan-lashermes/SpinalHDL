@@ -6,17 +6,19 @@ package spinal.tester.code
 import spinal.core.Nameable.{DATAMODEL_WEAK, USER_WEAK}
 import spinal.core._
 import spinal.core.fiber.Handle
-import spinal.core.internals.{Operator, Phase, PhaseContext}
+import spinal.core.internals.{BitAssignmentFixed, BitAssignmentFloating, Operator, Phase, PhaseContext, RangedAssignmentFixed, RangedAssignmentFloating}
 import spinal.lib._
 import spinal.core.sim._
-import spinal.idslplugin.Location
+import spinal.idslplugin.{Location, PostInitCallback}
 import spinal.lib.bus.amba4.axilite.AxiLite4
 import spinal.lib.eda.bench.{Bench, Rtl, XilinxStdTargets}
 import spinal.lib.fsm._
 import spinal.lib.graphic.Rgb
 import spinal.lib.io.TriState
+import spinal.lib.misc.test.{DualSimTracer, MultithreadedTester}
 import spinal.lib.sim.{StreamDriver, StreamMonitor}
 
+import java.io.File
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 import scala.math.ScalaNumber
@@ -297,13 +299,63 @@ object Tesasdadt extends App{
 object Debug2 extends App{
   SpinalConfig(allowOutOfRangeLiterals = true)
   def gen = new Component{
-    val cdA = ClockDomain.external("cdA")
-    val cdB = ClockDomain.external("cdB")
-    val input = in Bool()
-    val regA = cdA(RegNext(input))
-    val tmp = CombInit(regA)
-    val outputA = cdA(out(RegNext(tmp)))
-    val outputB = cdB(out(RegNext(tmp)))
+    import spinal.lib._
+
+    //Create 4 address slots
+    val slots = for(i <- 0 to 3) yield new Area{ //Note each slot is an Area, not a Bundle
+      val valid = RegInit(False)       //Because the slot is an Area, we can define hardware here, ex : a register
+      val address = Reg(UInt(8 bits))
+      val age = Reg(UInt(16 bits)) //Will count since how many cycles the slot is valid
+
+      //Because the slot is an Area, we can also define some interface / behaviour for each slot.
+      when(valid){
+        age := age + 1
+      }
+
+      val removeIt = False
+      when(removeIt){
+        valid := False
+      }
+    }
+
+    //Logic to allocate a new slot
+    val insert = new Area{
+      val cmd = Stream(UInt(8 bits))
+      val free = slots.map(!_.valid)
+      val freeOh = OHMasking.first(free)
+      cmd.ready := free.orR
+      when(cmd.fire){
+        slots.onMask(freeOh){slot =>
+          slot.address := cmd.payload
+          slot.age := 0
+        }
+      }
+    }
+
+    //Logic to remove the slots which match a given address (assuming there is not more than one)
+    val remove = new Area{
+      val cmd = Flow(UInt(8 bits))
+      val oh = slots.map(s => s.valid && s.address === cmd.payload) //oh meaning one hot
+      when(cmd.fire){
+        slots.onMask(oh){ slot =>
+          slot.removeIt := True
+        }
+      }
+
+      val reader = slots.reader(OHToUInt(oh)) //Create a facility to read the slots using "oh" as index
+      val age = reader(_.age) //Age of the slot which was removed
+    }
+
+
+
+
+//    val cdA = ClockDomain.external("cdA")
+//    val cdB = ClockDomain.external("cdB")
+//    val input = in Bool()
+//    val regA = cdA(RegNext(input))
+//    val tmp = CombInit(regA)
+//    val outputA = cdA(out(RegNext(tmp)))
+//    val outputB = cdB(out(RegNext(tmp)))
 //    val value = in UInt(2 bits)
 ////    val result = out((value < U"101011"))
 //
@@ -1666,4 +1718,128 @@ object BlackboxTuning extends App{
   }
 
   config.generateVerilog(new StreamFifo(Bits(8 bits), 1024))
+}
+
+
+
+object CompilationTest {
+  def main(args: Array[String]): Unit = {
+    SimConfig.withIVerilog.withWave.doSim(new Component{
+      val a = Reg(Bits(31 bits)).randBoot()
+      val b = Reg(Bits(32 bits)).randBoot()
+      val c = Reg(Bits(33 bits)).randBoot()
+      val x = Reg(Bits(127 bits)).randBoot()
+      val y = Reg(Bits(128 bits)).randBoot()
+      val z = Reg(Bits(129 bits)).randBoot()
+
+      setDefinitionName("aaa")
+    }){ dut =>
+      sleep(100)
+    }
+  }
+}
+
+
+
+object InterruptInterconnectPlay extends App{
+  import spinal.core.fiber._
+  class InterruptNode extends Area{
+    val flag = Bool()
+    val cd = ClockDomain.current
+    val ups = ArrayBuffer[InterruptNode]()
+
+    def <<(source : InterruptNode): Unit = ups += source
+    def >>(sink : InterruptNode) : Unit = sink << this
+
+    val thread = Fiber build new Area{
+      val gateways = for(up <- ups) yield new Area {
+        val flag = Bool()
+        ClockDomain.areSynchronous(cd, up.cd) match {
+          case true => flag := up.flag
+          case false => BufferCC(up.flag, init=False)
+        }
+      }
+      flag := gateways.map(_.flag).orR
+    }
+  }
+
+  class Cpu extends Area {
+    val thread = Fiber build new Area {
+      val interrupt = new InterruptNode()
+    }
+  }
+
+  class Plic extends Area {
+    def bind(riscvHart : Cpu) = {
+//      riscvHart.lock
+    }
+    def createTarget(id : Int): InterruptNode = {
+      new InterruptNode()
+    }
+
+    def createSource(id : Int): InterruptNode = {
+      new InterruptNode()
+    }
+  }
+
+  class Peripheral extends Area {
+    val interrupt = new InterruptNode()
+  }
+
+  SpinalVerilog(new Component{
+
+  })
+}
+
+
+object ExplorerTracerTest extends App{
+  class Toplevel extends Component{
+    val counter = Reg(UInt(32 bits)) init(0)
+    counter := counter + 1
+  }
+
+  val compiled = SimConfig.withFstWave.compile(new Toplevel())
+
+  DualSimTracer(compiled, window = 10000, seed = 42){dut=>
+    dut.clockDomain.forkStimulus(10)
+    sleep(100000)
+    simFailure()
+  }
+}
+
+
+object UnionPlay extends App{
+  SpinalVerilog(new Component {
+    case class TypeA() extends Bundle {
+      val x, y, z = UInt(8 bits)
+    }
+
+    case class TypeB() extends Bundle {
+      val l, m, n = UInt(4 bits)
+      val rgb = Rgb(2,3,4)
+    }
+
+    case class MyUnion() extends Union{
+      val a = newElement(TypeA())
+      val b = newElement(TypeB())
+    }
+
+    val miaou, wuff = MyUnion()
+    wuff := miaou
+    miaou.raw := 0
+//    val x = miaou.raw(4, 10 bits)
+//    val y = B"1001"
+//    x := y
+    def b = miaou.b
+//    b.m := U"1010"
+//    b.m(2) := True
+    b.m(2 downto 1) := U"10"
+    val sel = in UInt(2 bits)
+    b.rgb.g(1) := False
+    b.rgb.b(sel) := True
+    miaou.a.get().z(sel, 2 bits) := U"11"
+
+    miaou.a.y := U(4)
+//    miaou.a.x := U(4, 4 bits)
+  })
 }

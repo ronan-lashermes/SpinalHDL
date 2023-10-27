@@ -712,6 +712,16 @@ class StreamArbiterFactory {
     new StreamArbiter(dataType, portCount)(arbitrationLogic, lockLogic)
   }
 
+  def buildOn[T <: Data](inputs : Seq[Stream[T]]): StreamArbiter[T] = {
+    val a = new StreamArbiter(inputs.head.payloadType, inputs.size)(arbitrationLogic, lockLogic)
+    (a.io.inputs, inputs).zipped.foreach(_ << _)
+    a
+  }
+
+  def buildOn[T <: Data](first : Stream[T], others : Stream[T]*): StreamArbiter[T] = {
+    buildOn(first :: others.toList)
+  }
+
   def onArgs[T <: Data](inputs: Stream[T]*): Stream[T] = on(inputs.seq)
   def on[T <: Data](inputs: Seq[Stream[T]]): Stream[T] = {
     val arbiter = build(inputs(0).payloadType, inputs.size)
@@ -900,6 +910,12 @@ object StreamDemux{
     select >> c.io.createSelector()
     c.io.outputs
   }
+
+  def two[T <: Data](input: Stream[T], select : UInt) : (Stream[T], Stream[T]) = {
+    val demux = apply(input, select, 2)
+    (demux(0).combStage(), demux(1).combStage())
+  }
+  def two[T <: Data](input: Stream[T], select : Bool) : (Stream[T], Stream[T]) = two(input, select.asUInt)
 }
 
 class StreamDemux[T <: Data](dataType: T, portCount: Int) extends Component {
@@ -953,6 +969,12 @@ object StreamFork2 {
   def apply[T <: Data](input: Stream[T], synchronous: Boolean = false): (Stream[T], Stream[T]) = new Composite(input, "fork2"){
     val outputs = (cloneOf(input), cloneOf(input))
     val logic = new StreamForkArea(input, List(outputs._1, outputs._2), synchronous)
+  }.outputs
+
+  def takes[T <: Data](input: Stream[T],take0 : Bool, take1 : Bool, synchronous: Boolean = false): (Stream[T], Stream[T]) = new Composite(input, "fork2") {
+    val forks = (cloneOf(input), cloneOf(input))
+    val logic = new StreamForkArea(input, List(forks._1, forks._2), synchronous)
+    val outputs = (forks._1.takeWhen(take0), forks._1.takeWhen(take1))
   }.outputs
 }
 
@@ -1524,23 +1546,30 @@ class StreamFifoCC[T <: Data](val dataType: HardType[T],
   val finalPopCd = popClock.withOptionalBufferedResetFrom(withPopBufferedReset)(pushClock)
   val popCC = new ClockingArea(finalPopCd) {
     val popPtr      = Reg(UInt(log2Up(2*depth) bits)) init(0)
-    val popPtrPlus  = popPtr + 1
-    val popPtrGray  = RegNextWhen(toGray(popPtrPlus), io.pop.fire) init(0)
+    val popPtrPlus  = KeepAttribute(popPtr + 1)
+    val popPtrGray  = toGray(popPtr)
     val pushPtrGray = BufferCC(pushToPopGray, B(0, ptrWidth bit))
-    val empty       = isEmpty(popPtrGray, pushPtrGray)
+    val addressGen = Stream(UInt(log2Up(depth) bits))
+    val empty = isEmpty(popPtrGray, pushPtrGray)
+    addressGen.valid := !empty
+    addressGen.payload := popPtr.resized
 
-    io.pop.valid   := !empty
-    io.pop.payload := ram.readSync((io.pop.fire ? popPtrPlus | popPtr).resized, clockCrossing = true)
-
-    when(io.pop.fire) {
+    when(addressGen.fire){
       popPtr := popPtrPlus
     }
 
-    io.popOccupancy := (fromGray(pushPtrGray) - popPtr).resized
+    val readArbitation = addressGen.m2sPipe()
+    val readPort = ram.readSyncPort(clockCrossing = true)
+    readPort.cmd := addressGen.toFlowFire
+    io.pop << readArbitation.translateWith(readPort.rsp)
+
+    val ptrToPush = RegNextWhen(popPtrGray, readArbitation.fire) init(0)
+    val ptrToOccupancy = RegNextWhen(popPtr, readArbitation.fire) init(0)
+    io.popOccupancy := (fromGray(pushPtrGray) - ptrToOccupancy).resized
   }
 
   pushToPopGray := pushCC.pushPtrGray
-  popToPushGray := popCC.popPtrGray
+  popToPushGray := popCC.ptrToPush
 
   def formalAsserts(gclk: ClockDomain) = new Composite(this, "asserts") {
     import spinal.core.formal._
@@ -1559,6 +1588,7 @@ class StreamFifoCC[T <: Data](val dataType: HardType[T],
       }
       assert(popCC.popPtrGray === toGray(popCC.popPtr))
       assert(fromGray(popCC.pushPtrGray) - popCC.popPtr <= depth)
+      assert(popCC.popPtr === fromGray(popCC.ptrToPush) + io.pop.valid.asUInt)
     }
 
     val globalArea = new ClockingArea(gclk) {
@@ -2059,16 +2089,12 @@ class StreamTransactionCounter(
 
     def formalAsserts() = new Composite(this, "asserts") {
       val startedReg = Reg(Bool()) init False
-      val started = CombInit(startedReg)
-      val waiting = io.working & !started
       when(io.targetFire & io.working) {
-        started := True
         startedReg := True
       }
       when(done) { startedReg := False }
+      assert(startedReg === (counter.value > 0))
 
-      when(startedReg) { assert(io.working && counter.value > 0 && counter.value <= expected) }
-      when(counter.value > 0) { assert(started) }
       when(!io.working) { assert(counter.value === 0) }
       assert(counter.value <= expected)
     }
@@ -2134,6 +2160,8 @@ class StreamTransactionExtender[T <: Data, T2 <: Data](
     io.done := counter.io.done
     io.first := (counter.io.value === 0) && counter.io.working
     io.working := counter.io.working
+    
+    def formalAsserts() = counter.formalAsserts()
 }
 
 object StreamUnpacker {

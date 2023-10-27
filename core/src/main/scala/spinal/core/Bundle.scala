@@ -20,79 +20,11 @@
 \*                                                                           */
 package spinal.core
 
-// Importing the necessary packages
 import scala.collection.mutable.ArrayBuffer
 import spinal.core.internals._
 import spinal.idslplugin.{Location, ValCallback}
 
 import scala.collection.mutable
-
-/**
-  * The 'ValCallbackRec' trait, extending the 'ValCallback' trait, provides methods for recursively handling different Scala types.
-  * It plays a pivotal role in SpinalHDL by managing data structure representation in hardware description.
-  */
-trait ValCallbackRec extends ValCallback {
-
-    /**
-    * This method applies the 'valCallbackOn' method to a given 'ref' if it's not null and not already contained in 'refs'.
-    * It then adds the 'ref' to 'refs' to avoid duplications in the future.
-    */
-    private def applyValCallbackOn(ref: Any, name: String, refs: mutable.Set[Any]): Unit = {
-        if (ref != null && !refs.contains(ref)) {
-            refs += ref
-            handleType(ref, name, refs)
-            valCallbackRec(ref, name)
-        }
-    }
-
-    /**
-    * This method distinguishes between different types of 'ref' and applies the appropriate function for each type.
-    */
-    private def handleType(ref: Any, name: String, refs: mutable.Set[Any]): Unit = {
-        ref match {
-            case range : Range => // handle Range type
-            case vec: Vec[_]   => // handle Vec type
-            case seq: Seq[_]   => handleSequence(seq, name, refs)
-            case arr: Array[_] => handleSequence(arr, name, refs)
-            case set: Set[_]   => handleSequence(set, name, refs)
-            case set: mutable.LinkedHashSet[_] => handleSequence(set, name, refs)
-            case map: mutable.LinkedHashMap[_, _] => handleLinkedHashMap(map, name, refs)
-            case prod : Product if !name.contains("$") => handleTuple(prod, name, refs)
-            case Some(x) => applyValCallbackOn(x, name, refs) // handle Option type
-            case _ => // handle all other types
-        }
-    }
-
-    /**
-    * This method applies 'valCallbackOn' on each element in a sequence data structure (like `Seq`, `Array`, `Set`, `LinkedHashSet`) with an updated name.
-    */
-    private def handleSequence(seq: Iterable[_], name: String, refs: mutable.Set[Any]): Unit =
-        for ((e, i) <- seq.zipWithIndex) applyValCallbackOn(e, name + "_" + i, refs)
-
-    /**
-    * This method applies 'valCallbackOn' on each value in a LinkedHashMap with an updated name.
-    */
-    private def handleLinkedHashMap(map: mutable.LinkedHashMap[_, _], name: String, refs: mutable.Set[Any]): Unit =
-        for ((e, i) <- map.zipWithIndex) applyValCallbackOn(e._2, name + "_" + i, refs)
-
-    /**
-    * This method applies 'valCallbackOn' on each element in a tuple with an updated name.
-    */
-    private def handleTuple(tuple: Product, name: String, refs: mutable.Set[Any]): Unit =
-        for ((e, i) <- tuple.productIterator.zipWithIndex) applyValCallbackOn(e, name + "_" + i, refs)
-    
-    def valCallbackRec(ref: Any, name: String): Unit // abstract method to be implemented in a subclass
-
-    /**
-    * Overriding the valCallback method from the ValCallback trait.
-    * This method initiates the recursion by calling 'applyValCallbackOn'.
-    */
-    override def valCallback[T](ref: T, name: String): T = {
-        val refs = mutable.Set[Any]()
-        applyValCallbackOn(ref, name, refs)
-        ref
-    }
-}
 
 
 /**
@@ -110,138 +42,160 @@ trait ValCallbackRec extends ValCallback {
   * @see  [[http://spinalhdl.github.io/SpinalDoc/spinal/core/types/Bundle Bundle Documentation]]
   */
 
-/**
- * Class Bundle represents a composite data structure that consists of multiple named signals. 
- * This is a key abstraction in SpinalHDL, commonly used to represent hardware data structures, buses, interfaces, etc.
- */
+
+
+trait ValCallbackRec extends ValCallback{
+
+//  final override def valCallback(fieldRef: Any, name: String): Unit = {
+//    val refs = mutable.Set[Any]()
+//    valCallbackOn(fieldRef,name, refs)
+//  }
+  def valCallbackOn(ref: Any, name: String, refs :  mutable.Set[Any]): Unit = {
+    if (ref != null && !refs.contains(ref)) {
+      refs += ref
+      ref match {
+        case range : Range =>
+        case vec: Vec[_]   =>
+        case seq: Seq[_]   =>
+          for ((e, i) <- seq.zipWithIndex) {
+            valCallbackOn(e, name + "_" + i, refs)
+          }
+        case seq: Array[_] =>
+          for ((e, i) <- seq.zipWithIndex) {
+            valCallbackOn(e, name + "_" + i, refs)
+          }
+        case seq: Set[_]   =>
+          for ((e, i) <- seq.zipWithIndex) {
+            valCallbackOn(e, name + "_" + i, refs)
+          }
+        case seq: mutable.LinkedHashSet[_]   =>
+          for ((e, i) <- seq.zipWithIndex) {
+            valCallbackOn(e, name + "_" + i, refs)
+          }
+        case seq: mutable.LinkedHashMap[_, _]   =>
+          for ((e, i) <- seq.zipWithIndex) {
+            valCallbackOn(e._2, name + "_" + i, refs)
+          }
+        case prod : Tuple2[_,_] if !name.contains("$")=> //$ check to avoid trigerring on val (x,y)
+          for ((e, i) <- prod.productIterator.zipWithIndex) {
+            valCallbackOn(e, name + "_" + i, refs)
+          }
+        case prod : Tuple3[_,_,_] if !name.contains("$") =>
+          for ((e, i) <- prod.productIterator.zipWithIndex) {
+            valCallbackOn(e, name + "_" + i, refs)
+          }
+        case prod : Tuple4[_,_,_,_] if !name.contains("$") =>
+          for ((e, i) <- prod.productIterator.zipWithIndex) {
+            valCallbackOn(e, name + "_" + i, refs)
+          }
+        case Some(x) => valCallbackOn(x, name, refs)
+        case _             =>
+      }
+
+      valCallbackRec(ref, name)
+    }
+  }
+
+  def valCallbackRec(ref: Any, name: String): Unit
+
+  override def valCallback[T](ref: T, name: String): T = {
+    val refs = mutable.Set[Any]()
+    valCallbackOn(ref, name, refs)
+    ref
+  }
+}
+
 class Bundle extends MultiData with Nameable with ValCallbackRec {
 
-    // 'hardType' is a variable that holds the 'HardType' instance, which can be used as a factory for creating 
-    // new instances of this bundle. The 'HardType' is a way of storing the data type or the blueprint of this
-    // bundle so that it can be used to produce similar structured bundles. It is used in the 'clone' method
-    // to create a new instance of the same structure.
-    var hardtype: HardType[_] = null
+  var hardtype: HardType[_] = null
 
-    /**
-    * Overriding the clone method to create a new Bundle instance with the same properties.
-    */
-    override def clone: Bundle = {
-        if (hardtype != null) {
-            val ret = hardtype().asInstanceOf[this.type]
-            ret.hardtype = hardtype
-            return ret
-        }
-        super.clone.asInstanceOf[Bundle]
+  override def clone: Bundle = {
+    if (hardtype != null) {
+      val ret = hardtype().asInstanceOf[this.type]
+      ret.hardtype = hardtype
+      return ret
     }
+    super.clone.asInstanceOf[Bundle]
+  }
 
-    /** 
-    * A method to assign the values of this Bundle's signals from another Bundle by matching names. 
-    */
-    def assignAllByName(that: Bundle): Unit = {
-        for ((name, element) <- elements) {
-            val other = that.find(name)
-            if (other == null)
-                LocatedPendingError(s"Bundle assignment is not complete. Missing $name")
-            else element match {
-                case b: Bundle => b.assignAllByName(other.asInstanceOf[Bundle])
-                case _         => element := other
-            }
-        }
+  /** Assign the bundle with an other bundle by name */
+  def assignAllByName(that: Bundle): Unit = {
+    for ((name, element) <- elements) {
+      val other = that.find(name)
+      if (other == null)
+        LocatedPendingError(s"Bundle assignment is not complete. Missing $name")
+      else element match {
+        case b: Bundle => b.assignAllByName(other.asInstanceOf[Bundle])
+        case _         => element := other
+      }
     }
+  }
 
-    /**
-    * A method to assign the values of this Bundle's signals from another Bundle by matching names.
-    * Unlike assignAllByName, this will not raise an error if some names are not found in the source Bundle.
-    */
-    def assignSomeByName(that: Bundle): Unit = {
-        for ((name, element) <- elements) {
-            val other = that.find(name)
-            if (other != null) {
-                element match {
-                case b: Bundle => b.assignSomeByName(other.asInstanceOf[Bundle])
-                case _         => element := other
-                }
-            }
+  /** Assign all possible signal fo the bundle with an other bundle by name */
+  def assignSomeByName(that: Bundle): Unit = {
+    for ((name, element) <- elements) {
+      val other = that.find(name)
+      if (other != null) {
+        element match {
+          case b: Bundle => b.assignSomeByName(other.asInstanceOf[Bundle])
+          case _         => element := other
         }
+      }
     }
+  }
 
-    /**
-    * A generic method that accepts a function 'f' as parameter and applies it to each pair of corresponding elements in 'this' and 'that' Bundles.
-    */
-    def bundleAssign(that : Bundle)(f : (Data, Data) => Unit): Unit ={
-        for ((name, element) <- elements) {
-            val other = that.find(name)
-            if (other == null) {
-                LocatedPendingError(s"Bundle assignment is not complete. $this need '$name' but $that doesn't provide it.")
-            }
-            else {
-                f(element, other)
-            }
-        }
+  def bundleAssign(that : Bundle)(f : (Data, Data) => Unit): Unit ={
+    for ((name, element) <- elements) {
+      val other = that.find(name)
+      if (other == null) {
+        LocatedPendingError(s"Bundle assignment is not complete. $this need '$name' but $that doesn't provide it.")
+      }
+      else {
+        f(element, other)
+      }
     }
+  }
 
-    /**
-    * Overriding the assignFromImpl method from MultiData. 
-    * It checks if 'that' is a Bundle and of the same final class as 'this', and calls 'bundleAssign' to assign values.
-    * If 'that' is not a Bundle, it throws an Exception.
-    */
-    private[core] override def assignFromImpl(that: AnyRef, target: AnyRef, kind: AnyRef)(implicit loc: Location): Unit = {
-        that match {
-        case that: Bundle =>
-            if (!this.getClass.isAssignableFrom(that.getClass)) {
-                // If 'that' is not of the same class type as 'this', it raises an error.
-                SpinalError("Bundles must have the same final class to be assigned. Either use assignByName or assignSomeByName at \n" + ScalaLocated.long)
-            } else {
-                // If 'that' is a Bundle of the same class type as 'this', it calls the bundleAssign method.
-                // This method iterates over the elements in 'this' and 'that' Bundles and assigns values from 'that' to 'this'.
-                bundleAssign(that) { (to, from) => 
-                    to.compositAssignFrom(from,to,kind)
-                }
-            }
-        case _ => SpinalError(s"A bundle can't be assigned by something else than a bundle ($this <= $that)")
-        }
+  protected override def assignFromImpl(that: AnyRef, target: AnyRef, kind: AnyRef)(implicit loc: Location): Unit = {
+    that match {
+      case that: Bundle =>
+        if (!this.getClass.isAssignableFrom(that.getClass)) SpinalError("Bundles must have the same final class to" +
+          " be assigned. Either use assignByName or assignSomeByName at \n" + ScalaLocated.long)
+        bundleAssign(that)((to, from) => to.compositAssignFrom(from,to,kind))
+      case _ => throw new Exception("Undefined assignment")
     }
+  }
 
+  var elementsCache = ArrayBuffer[(String, Data)]()
 
-    // `elementsCache` is an ArrayBuffer of Tuple2 containing a String and a Data. 
-    // This array buffer is used to store all elements of the bundle with their associated names. 
-    // Each element in the array buffer is a pair, where the first item is the name of the element 
-    // and the second item is the Data object that represents the element itself.
-    var elementsCache = ArrayBuffer[(String, Data)]()
-
-    // The `valCallbackRec` method is called each time a value is added to the bundle.
-    // This method is mainly responsible for updating `elementsCache` and setting the parent of the new item to `this` (the current bundle).
-    // It also sets a partial name for the new item if certain conditions are met.
-    override def valCallbackRec(ref: Any, name: String): Unit = ref match {
-        case ref : Data => {
-            // Add the new item to `elementsCache`
-            elementsCache += name -> ref
-            // Set the parent of the new item to `this` (the current bundle)
-            ref.parent = this
-            // If certain conditions are met (as defined by `OwnableRef.proposal(ref, this)`), 
-            // set a partial name for the new item
-            if(OwnableRef.proposal(ref, this)) ref.setPartialName(name, Nameable.DATAMODEL_WEAK)
-        }
-        // If `ref` is not an instance of `Data`, do nothing
-        case ref =>
+  override def valCallbackRec(ref: Any, name: String): Unit = ref match {
+    case ref : Data => {
+      elementsCache += name -> ref
+      ref.parent = this
+      if(OwnableRef.proposal(ref, this)) ref.setPartialName(name, Nameable.DATAMODEL_WEAK)
     }
+    case ref =>
+  }
 
-    // The `elements` method returns the `elementsCache`, which contains all elements of the bundle 
-    // along with their associated names.
-    override def elements: ArrayBuffer[(String, Data)] = elementsCache
 
-    // The `rejectOlder` method is defined as always returning true. 
-    private[core] def rejectOlder = true
+  override def elements: ArrayBuffer[(String, Data)] = elementsCache
 
-    // The `getTypeString` method returns the simple name of the class of the current object. 
-    def getTypeString = getClass.getSimpleName
+  private[core] def rejectOlder = true
 
-    // The `toString` method returns a string representation of the object. 
-    // It contains the path of the component, the name of the bundle, and the simple name of the class.
-    override def toString(): String = s"${component.getPath() + "/" + this.getDisplayName()} : $getTypeString"
+  def getTypeString = getClass.getSimpleName
 
+  override def toString(): String = s"${component.getPath() + "/" + this.getDisplayName()} : $getTypeString"
 }
 
 class BundleCase extends Bundle {
-    private[core] override def rejectOlder = false
+  private[core] override def rejectOlder = false
+}
+
+trait IConnectable[T <: IConnectable[T]] {
+  def connectFrom(that: T): T
+  def <<(that: T): T = connectFrom(that)
+  def >>(into: T): T = {
+    into << this.asInstanceOf[T]
+    into
+  }
 }

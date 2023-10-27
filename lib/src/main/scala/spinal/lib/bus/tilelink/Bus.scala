@@ -4,6 +4,7 @@ import spinal.core._
 import spinal.core.sim.SimDataPimper
 import spinal.lib._
 import spinal.lib.bus.bmb.WeakConnector
+import spinal.lib.bus.tilelink
 import spinal.lib.bus.tilelink.coherent.OrderingCmd
 import spinal.lib.bus.tilelink.sim._
 
@@ -43,7 +44,11 @@ object Opcode extends AreaRoot{
       RELEASE       -> 6,
       RELEASE_DATA  -> 7
     )
-    def withoutData(c : C) = List(PROBE_ACK, RELEASE).map(c === _).orR
+
+    def withoutData(c: C) = List(PROBE_ACK, RELEASE).map(c === _).orR
+    def withData(c: C) =  List(PROBE_ACK_DATA, RELEASE_DATA).map(c === _).orR
+    def isProbe(c: C) = List(PROBE_ACK, PROBE_ACK_DATA).map(c === _).orR
+    def isRelease(c: C) = List(RELEASE, RELEASE_DATA).map(c === _).orR
   }
 
   val D = new SpinalEnum{
@@ -55,7 +60,8 @@ object Opcode extends AreaRoot{
       GRANT_DATA  -> 5,
       RELEASE_ACK -> 6
     )
-    def fromA(opcode : C) : Bool = List(ACCESS_ACK, ACCESS_ACK_DATA).map(opcode === _).orR
+    def fromA(opcode : C) : Bool = List(ACCESS_ACK, ACCESS_ACK_DATA, GRANT, GRANT_DATA).map(opcode === _).orR
+    def isFinal(opcode : C) : Bool = List(ACCESS_ACK, ACCESS_ACK_DATA, RELEASE_ACK).map(opcode === _).orR
   }
 }
 
@@ -89,6 +95,16 @@ object Param{
     val NtoB = 0
     val NtoT = 1
     val BtoT = 2
+
+    def apply(withData : Bool, toUnique : Bool) = {
+      toUnique mux(
+        withData mux(
+          B(NtoT, 3 bits),
+          B(BtoT, 3 bits)
+        ),
+        B(NtoB, 3 bits)
+      )
+    }
 
     def getCap(grow : Int) = grow match {
       case NtoB => Cap.toB
@@ -127,6 +143,18 @@ object Param{
     case Report.BtoB => (Cap.toB, Cap.toB)
     case Report.NtoN => (Cap.toN, Cap.toN)
   }
+  def report(fromUnique : Bool, fromShared : Bool,
+             toUnique : Bool, toShared : Bool) = {
+    (fromUnique ## fromShared ## toUnique ## toShared).muxDc(
+      B"1001" -> B(Prune.TtoB, 3 bits),
+      B"1000" -> B(Prune.TtoN, 3 bits),
+      B"0100" -> B(Prune.BtoN, 3 bits),
+      B"1010" -> B(Report.TtoT, 3 bits),
+      B"0101" -> B(Report.BtoB, 3 bits),
+      B"0000" -> B(Report.NtoN, 3 bits)
+    )
+  }
+
 }
 
 
@@ -191,6 +219,10 @@ abstract class BusFragment(val p : BusParameter) extends Bundle {
   def withMask : Boolean
   def withDenied : Boolean
   def withSink : Boolean = false
+
+  def sizeToBeatMinusOne() = spinal.lib.bus.tilelink.sizeToBeatMinusOne(p, size)
+
+  def asNoData(): this.type
 }
 
 case class ChannelA(override val p : BusParameter) extends BusFragment(p) {
@@ -205,13 +237,13 @@ case class ChannelA(override val p : BusParameter) extends BusFragment(p) {
   val debugId = DebugId()
 
   override def withBeats = p.withDataA.mux(List(Opcode.A.PUT_FULL_DATA(), Opcode.A.PUT_PARTIAL_DATA()).sContains(opcode), False)
-  def asNoData() : ChannelA = p.withDataA match {
+  def asNoData() : this.type = p.withDataA match {
     case false => CombInit(this)
     case true => {
       val a = ChannelA(p.copy(withDataA = false))
       a.assignSomeByName(this)
       a
-    }
+    }.asInstanceOf[this.type]
   }
   override def clone = ChannelA(p)
   override def maskNull = mask
@@ -228,8 +260,8 @@ case class ChannelA(override val p : BusParameter) extends BusFragment(p) {
     s.param := m.param
     s.source := m.source
     s.address := m.address
-    s.size := m.size
     s.debugId := m.debugId
+    WeakConnector(m, s, m.size,    s.size   , defaultValue = () => null, allowUpSize = true , allowDownSize = false, allowDrop = false)
     WeakConnector(m, s, m.mask,    s.mask   , defaultValue = () => cloneOf(s.mask).assignDontCare(), allowUpSize = false , allowDownSize = false, allowDrop = true)
     WeakConnector(m, s, m.data,    s.data   , defaultValue = () => cloneOf(s.data).assignDontCare(), allowUpSize = false , allowDownSize = false, allowDrop = true)
     WeakConnector(m, s, m.corrupt, s.corrupt, defaultValue = () => False, allowUpSize = false , allowDownSize = false, allowDrop = false)
@@ -254,6 +286,15 @@ case class ChannelB(override val p : BusParameter) extends BusFragment(p) {
   def withData : Boolean = p.withDataB
   def withMask : Boolean = p.withDataB
   def withDenied : Boolean = false
+
+  def asNoData(): this.type = p.withDataB match {
+    case false => CombInit(this)
+    case true => {
+      val a = ChannelB(p.copy(withDataB = false))
+      a.assignSomeByName(this)
+      a
+    }.asInstanceOf[this.type]
+  }
 }
 case class ChannelC(override val p : BusParameter) extends BusFragment(p) {
   val opcode  = Opcode.C()
@@ -261,7 +302,7 @@ case class ChannelC(override val p : BusParameter) extends BusFragment(p) {
   val source  = p.source()
   val address = p.address()
   val size    = p.size()
-  val data    = p.data()
+  val data    = p.withDataC generate p.data()
   val corrupt = Bool()
 
   def isProbeKind()   = opcode === Opcode.C.PROBE_ACK || opcode === Opcode.C.PROBE_ACK_DATA
@@ -272,9 +313,18 @@ case class ChannelC(override val p : BusParameter) extends BusFragment(p) {
   override def addressNull = address
 
   def withAddress : Boolean = true
-  def withData : Boolean = true
+  def withData : Boolean = p.withDataC
   def withMask : Boolean = false
   def withDenied : Boolean = false
+
+  def asNoData(): this.type = p.withDataC match {
+    case false => CombInit(this)
+    case true => {
+      val a = ChannelC(p.copy(withDataC = false))
+      a.assignSomeByName(this)
+      a
+    }.asInstanceOf[this.type]
+  }
 }
 case class ChannelD(override val p : BusParameter) extends BusFragment(p) {
   val opcode  = Opcode.D()
@@ -316,9 +366,18 @@ case class ChannelD(override val p : BusParameter) extends BusFragment(p) {
     s.source := m.source
     s.sink := m.sink
     s.denied := m.denied
-    WeakConnector(m, s, m.size,    s.size   , defaultValue = null, allowUpSize = true , allowDownSize = false, allowDrop = false)
+    WeakConnector(m, s, m.size,    s.size   , defaultValue = null, allowUpSize = true , allowDownSize = true, allowDrop = false)
     WeakConnector(m, s, m.data,    s.data   , defaultValue = () => cloneOf(s.data).assignDontCare(), allowUpSize = false , allowDownSize = false, allowDrop = true)
-    WeakConnector(m, s, m.corrupt, s.corrupt, defaultValue = () => False, allowUpSize = false , allowDownSize = false, allowDrop = false)
+    WeakConnector(m, s, m.corrupt, s.corrupt, defaultValue = () => False, allowUpSize = false , allowDownSize = false, allowDrop = true)
+  }
+
+  def asNoData(): this.type = p.withDataD match {
+    case false => CombInit(this)
+    case true => {
+      val a = ChannelD(p.copy(withDataD = false))
+      a.assignSomeByName(this)
+      a
+    }.asInstanceOf[this.type]
   }
 }
 case class ChannelE(p : BusParameter) extends Bundle {
@@ -327,6 +386,7 @@ case class ChannelE(p : BusParameter) extends Bundle {
 
 object Bus{
   def  apply(p : NodeParameters) : Bus = Bus(p.toBusParameter())
+  def  apply(p : M2sParameters) : Bus = Bus(p.toNodeParameters().toBusParameter())
 }
 
 case class Bus(p : BusParameter) extends Bundle with IMasterSlave{
