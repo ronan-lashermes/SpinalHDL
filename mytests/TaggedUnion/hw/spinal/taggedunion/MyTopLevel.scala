@@ -31,7 +31,7 @@ case class MemoryController() extends Component {
 
     val taggedUnion = TypeAorB()
 
-    println(s"v = ${taggedUnion.elements}")
+    println(s"v = ${taggedUnion.elementsCache}")
 
     val a: TypeA = v.aliasAs(TypeA())
     val b: TypeB = v.aliasAs(TypeB())

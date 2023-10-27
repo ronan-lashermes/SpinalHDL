@@ -6,25 +6,53 @@ import spinal.lib._
 import spinal.idslplugin.{Location, ValCallback}
 
 import scala.collection.mutable.ArrayBuffer
-
+import spinal.idslplugin.PostInitCallback
 
 
 // Tagged Union definition
-class TaggedUnion extends Nameable with ScalaLocated with ValCallbackRec {
-    val elements = ArrayBuffer[(String, _ <: Data)]()
+class TaggedUnion(var encoding: SpinalEnumEncoding = native) extends Bundle with PostInitCallback {
 
-    override def valCallbackRec(ref: Any, name: String): Unit = ref match {
-        case ref : Data => {
-            // Add the new item to `elements`
-            elements += name -> ref
-            // If certain conditions are met (as defined by `OwnableRef.proposal(ref, this)`), 
-            // set a partial name for the new item
-            if(OwnableRef.proposal(ref, this)) {
-                ref.setPartialName(name, Nameable.DATAMODEL_WEAK)
+    val tag: SpinalEnum = new SpinalEnum(encoding)
+
+    var nodir: Bits = null
+
+    def build(): Unit = {
+        assert(elementsCache.size > 0, "TaggedUnion must have at least one element") // TODO, deal with this edge case
+        val unionHT = HardType.union(this.elementsCache.map(_._2): _*)
+        nodir = unionHT()
+
+        elementsCache.foreach {
+            case (name, element) => {
+                tag.newElement(name)
             }
         }
-        // If `ref` is not an instance of `Data`, do nothing
-        case ref => {
-        }
+            
+    }
+
+    override def postInitCallback() = {
+        build()
+        this
     }
 }
+
+
+
+
+// class TaggedUnionCraft(var encoding: SpinalEnumEncoding = native) extends Bundle with PostInitCallback {
+
+//     val tag: SpinalEnum = new SpinalEnum(encoding)
+
+//     val nodir: Bits = null
+
+//     def build(): Unit = {
+//         // tag = UInt(log2Up(union.uTypes.size) bits)
+//         // valCallbackRec(tag, "tag")
+//         // val unionHT = HardType.union(tu.elements.map(_._2): _*)
+//     }
+
+//     override def postInitCallback() = {
+//         // build()
+//         this
+//     }
+
+// }
