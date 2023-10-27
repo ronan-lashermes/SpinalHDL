@@ -14,7 +14,8 @@ case class TypeB() extends Bundle {
 }
 
 case class TypeAorB() extends TaggedUnion {
-    val a = TypeA()
+    val a1 = TypeA()
+    val a2 = TypeA()
     val b = TypeB()
 }
 
@@ -24,24 +25,28 @@ case class MemoryController() extends Component {
         val res = out UInt(8 bits)
     }
 
-    val AorB = HardType.union(TypeA(), TypeB())
+   
 
-    val v = AorB()
-    v := 0
+    val taggedUnion = Reg(TypeAorB())
 
-    val taggedUnion = TypeAorB()
+    println(s"taggedUnion = ${taggedUnion.elementsCache}")
+    println(s"taggedUnionBits = ${taggedUnion.nodir}")
+    println(s"tag = ${taggedUnion.tag}")
 
-    println(s"v = ${taggedUnion.elementsCache}")
-
-    val a: TypeA = v.aliasAs(TypeA())
-    val b: TypeB = v.aliasAs(TypeB())
+    
+    println(s"tagEnum = ${taggedUnion.tagEnum.elements}")
 
     when(io.sel) {
-        a.y := U"8'hFF"
-        b.m := U"6'hF"
+        taggedUnion.chooseOne(taggedUnion.a1) { 
+            a1 => {
+                a1.x := 1
+                a1.y := 2
+                a1.z := 3
+            }
+        }
     }
 
-    io.res := a.x
+    io.res := 0
 }
 
 object MemoryControllerVerilog extends App {
