@@ -1,18 +1,38 @@
-package spinal.lib
+/*                                                                           *\
+**        _____ ____  _____   _____    __                                    **
+**       / ___// __ \/  _/ | / /   |  / /   HDL Core                         **
+**       \__ \/ /_/ // //  |/ / /| | / /    (c) Dolu, All rights reserved    **
+**      ___/ / ____// // /|  / ___ |/ /___                                   **
+**     /____/_/   /___/_/ |_/_/  |_/_____/                                   **
+**                                                                           **
+**      This library is free software; you can redistribute it and/or        **
+**    modify it under the terms of the GNU Lesser General Public             **
+**    License as published by the Free Software Foundation; either           **
+**    version 3.0 of the License, or (at your option) any later version.     **
+**                                                                           **
+**      This library is distributed in the hope that it will be useful,      **
+**    but WITHOUT ANY WARRANTY; without even the implied warranty of         **
+**    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU      **
+**    Lesser General Public License for more details.                        **
+**                                                                           **
+**      You should have received a copy of the GNU Lesser General Public     **
+**    License along with this library.                                       **
+\*                                                                           */
+package spinal.core
 
-import spinal.core._
+import scala.collection.mutable.ArrayBuffer
 import spinal.core.internals._
-import spinal.lib._
 import spinal.idslplugin.{Location, ValCallback}
 
-import scala.collection.mutable.Map
+import scala.collection.mutable
 import spinal.idslplugin.PostInitCallback
 
 
-// Tagged Union definition
-class TaggedUnion(var encoding: SpinalEnumEncoding = native) extends Bundle with PostInitCallback {
 
-    // TODO Should restrict the type of tagEnum to a subtype of SpinalEnum
+class TaggedUnion(var encoding: SpinalEnumEncoding = native) extends MultiData with Nameable with ValCallbackRec with PostInitCallback {
+
+    var hardtype: HardType[_] = null
+    var elementsCache = ArrayBuffer[(String, Data)]()
 
     var tagEnum: SpinalEnum = new SpinalEnum(encoding)
     var tagElementsCache: Map[String, SpinalEnumElement[SpinalEnum]] = Map[String, SpinalEnumElement[SpinalEnum]]()
@@ -20,11 +40,79 @@ class TaggedUnion(var encoding: SpinalEnumEncoding = native) extends Bundle with
 
     var nodir: Bits = null
 
+    override def clone: TaggedUnion = {
+        if (hardtype != null) {
+        val ret = hardtype().asInstanceOf[this.type]
+        ret.hardtype = hardtype
+        return ret
+        }
+        super.clone.asInstanceOf[TaggedUnion]
+    }
+
+    /** Assign the bundle with an other bundle by name */
+    def assignAllByName(that: TaggedUnion): Unit = {
+        for ((name, element) <- elements) {
+        val other = that.find(name)
+        if (other == null)
+            LocatedPendingError(s"TaggedUnion assignment is not complete. Missing $name")
+        else element match {
+            case b: TaggedUnion => b.assignAllByName(other.asInstanceOf[TaggedUnion])
+            case _         => element := other
+        }
+        }
+    }
+
+    /** Assign all possible signal fo the bundle with an other bundle by name */
+    def assignSomeByName(that: TaggedUnion): Unit = {
+        for ((name, element) <- elements) {
+        val other = that.find(name)
+        if (other != null) {
+            element match {
+                case b: TaggedUnion => b.assignSomeByName(other.asInstanceOf[TaggedUnion])
+                case _         => element := other
+            }
+        }
+        }
+    }
+
+    def bundleAssign(that : TaggedUnion)(f : (Data, Data) => Unit): Unit ={
+        for ((name, element) <- elements) {
+            val other = that.find(name)
+            if (other == null) {
+                LocatedPendingError(s"TaggedUnion assignment is not complete. $this need '$name' but $that doesn't provide it.")
+            }
+            else {
+                f(element, other)
+            }
+        }
+    }
+
+    protected override def assignFromImpl(that: AnyRef, target: AnyRef, kind: AnyRef)(implicit loc: Location): Unit = {
+        that match {
+            case that: TaggedUnion =>
+                if (!this.getClass.isAssignableFrom(that.getClass)) SpinalError("TaggedUnions must have the same final class to" +
+                    " be assigned. Either use assignByName or assignSomeByName at \n" + ScalaLocated.long)
+                    bundleAssign(that)((to, from) => to.compositAssignFrom(from,to,kind))
+            case _ => throw new Exception("Undefined assignment")
+        }
+    }
+
+
+    override def valCallbackRec(ref: Any, name: String): Unit = ref match {
+        case ref : Data => {
+            elementsCache += name -> ref
+            //   ref.parent = this
+            //   if(OwnableRef.proposal(ref, this)) ref.setPartialName(name, Nameable.DATAMODEL_WEAK)
+        }
+        case ref =>
+    }
+
     def build(): Unit = {
         assert(elementsCache.size > 0, "TaggedUnion must have at least one element") // TODO, deal with this edge case
         val unionHT = HardType.unionSeq(this.elementsCache.map(_._2))
         nodir = unionHT()
-
+        nodir.setName(this.getTypeString + "/nodir")
+        nodir := 0 // For debug only
         
         elementsCache.foreach {
             case (name, element) => {
@@ -36,9 +124,9 @@ class TaggedUnion(var encoding: SpinalEnumEncoding = native) extends Bundle with
         tag = tagEnum()
 
         // Adding these elements to generated HDL
-        valCallbackRec(tag, "tag")   
+        // valCallbackRec(tag, "tag")   
 
-        valCallbackRec(nodir, "nodir")
+        // valCallbackRec(nodir, "nodir")
     }
 
 
@@ -46,6 +134,15 @@ class TaggedUnion(var encoding: SpinalEnumEncoding = native) extends Bundle with
         build()
         this
     }
+
+
+    override def elements: ArrayBuffer[(String, Data)] = elementsCache
+
+    private[core] def rejectOlder = true
+
+    def getTypeString = getClass.getSimpleName
+
+    override def toString(): String = s"${component.getPath() + "/" + this.getDisplayName()} : $getTypeString"
 
     def chooseOne[T <: Data](data: T)(callback: T => Unit): Unit = {
         val chosenElement = this.elementsCache.find(_._2 == data)
@@ -60,19 +157,3 @@ class TaggedUnion(var encoding: SpinalEnumEncoding = native) extends Bundle with
     }
 }
 
-// Use Composition Instead of Inheritance: Instead of having TaggedUnion directly extend Bundle, you could have a member of TaggedUnion that is a Bundle. This way, only the members of that inner Bundle would be translated to HDL, and the outer TaggedUnion class can have additional members that don't get translated.
-
-// For example:
-
-// scala
-
-// class TaggedUnion(...) {
-//     class TaggedUnionIO extends Bundle {
-//         val tag = tagEnum()
-//         val nodir = HardType.unionSeq(...)
-//     }
-//     val io = new TaggedUnionIO
-//     // other TaggedUnion code...
-// }
-
-// You would then reference tag and nodir as taggedUnion.io.tag and taggedUnion.io.nodir respectively.

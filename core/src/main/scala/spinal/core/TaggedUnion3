@@ -1,0 +1,114 @@
+package spinal.lib
+
+import spinal.core._
+import spinal.core.internals._
+import spinal.idslplugin.PostInitCallback
+
+import scala.collection.mutable
+
+// class TaggedUnion(var encoding: SpinalEnumEncoding = native) extends Nameable with PostInitCallback {
+//   private val elements = mutable.LinkedHashMap[String, Data]()
+//   private var tagEnum: SpinalEnum = _
+//   private var tagElementsCache: mutable.Map[String, SpinalEnumElement[_]] = mutable.Map[String, SpinalEnumElement[_]]()
+//   var tag: SpinalEnumCraft[_] = _
+//   var nodir: Bits = _
+
+//   def add[T <: Data](name: String, element: T): T = {
+//     assert(!elements.contains(name), s"Element $name already exists in the TaggedUnion")
+//     elements(name) = element
+//     element.setPartialName(name, Nameable.DATAMODEL_WEAK)
+//     element
+//   }
+
+//   def build[T <: SpinalEnum](tagEnumType: => T): Unit = {
+//     assert(elements.nonEmpty, "TaggedUnion must have at least one element")
+//     tagEnum = tagEnumType
+//     val unionHT = HardType.unionSeq(elements.values.toSeq)
+//     nodir = unionHT()
+
+//     elements.foreach { case (name, element) =>
+//       val el = tagEnum.newElement(name)
+//       tagElementsCache += (name -> el)
+//     }
+
+//     tag = tagEnum().asBits() // Assuming that the tagEnum is used as a BitVector
+
+//     // Assign the fields to nodir and tag
+//     // ... (implementation depends on how you want to use nodir and tag)
+//   }
+
+//   override def postInitCallback(): Unit = {
+//     // This can be called after the elements have been added and the tagEnum has been built.
+//     // Ensure that build(...) has been called first.
+//     // Here you can write additional initialization logic if needed.
+//   }
+
+//   def chooseOne[T <: Data](data: T)(callback: T => Unit): Unit = {
+//     elements.find(_._2 == data) match {
+//       case Some((name, _)) =>
+//         val variant = tagElementsCache(name)
+//         tag.assignFromBits(variant.asBits()) // Assuming that you want to assign tag from the variant bit pattern
+//         callback(data)
+//       case None =>
+//         SpinalError(s"$data is not a member of this TaggedUnion")
+//     }
+//   }
+
+//   // Rest of the methods as required for your TaggedUnion class
+// }
+
+class TaggedUnion(var encoding: SpinalEnumEncoding = native) extends Nameable with ScalaLocated with ValCallbackRec with PostInitCallback {
+    // Elements of the TaggedUnion : value is one among these
+    private val elementsCache = mutable.ArrayBuffer[(String, _ <: Data)]()
+
+    // Populate elements from Data values in the declaration
+    override def valCallbackRec(ref: Any, name: String): Unit = ref match {
+        case ref : Data => {
+            // Add the new item to `elements`
+            elementsCache += name -> ref
+
+            // SpinalInfo(s"TaggedUnionElement: $name, ref direction: ${ref.dir}")
+        }
+        // If `ref` is not an instance of `Data`, do nothing
+        case ref => {
+        }
+    }
+
+    var tagEnum: SpinalEnum = new SpinalEnum(encoding)
+    var tagElementsCache: mutable.Map[String, SpinalEnumElement[SpinalEnum]] = mutable.Map[String, SpinalEnumElement[SpinalEnum]]()
+
+    var data: Bundle = null
+
+    def build(): Unit = {
+        // preconditions
+        assert(elementsCache.size > 0, "TaggedUnion must have at least one element") // TODO, deal with edge case 0 elements
+
+        // nodir
+        val unionHT = HardType.unionSeq(this.elementsCache.map(_._2))
+
+        // tag
+        elementsCache.foreach {
+            case (name, element) => {
+                val el = tagEnum.newElement(name)
+                tagElementsCache += (name -> el)
+            }
+        }
+
+
+        val dataBuilder = new Bundle {
+            val tag = tagEnum()
+            val nodir = unionHT()
+        }
+
+        data = dataBuilder
+        // Adding these elements to generated HDL
+        // valCallbackRec(tag, "tag")   
+        // valCallbackRec(nodir, "nodir")
+    }
+
+
+    override def postInitCallback() = {
+        build()
+        this
+    }
+}
