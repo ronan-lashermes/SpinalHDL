@@ -29,6 +29,7 @@ case class MemoryController() extends Component {
    
 
     val taggedUnion = Reg(TypeAorB())
+    taggedUnion.nodir := 0
 
     println(s"taggedUnion = ${taggedUnion}")
     println(s"taggedUnionBits = ${taggedUnion.nodir}")
@@ -46,16 +47,16 @@ case class MemoryController() extends Component {
             }
         }
     }
-    // .otherwise {
-    //     taggedUnion.chooseOne(taggedUnion.b) {
-    //         b: TypeB => {
-    //             b.l := 4
-    //             b.m := 5
-    //             b.n := 6
-    //             b.r := -1
-    //         }
-    //     }
-    // }
+    .otherwise {
+        taggedUnion.chooseOne(taggedUnion.b) {
+            b: TypeB => {
+                b.l := 4
+                b.m := 5
+                b.n := 6
+                b.r := -1
+            }
+        }
+    }
 
     val uint_union = taggedUnion.nodir.asUInt
     io.res := uint_union.resized

@@ -111,8 +111,8 @@ class TaggedUnion(var encoding: SpinalEnumEncoding = native) extends MultiData w
         assert(elementsCache.size > 0, "TaggedUnion must have at least one element") // TODO, deal with this edge case
         val unionHT = HardType.unionSeq(this.elementsCache.map(_._2))
         nodir = unionHT()
-        nodir.setName(this.getTypeString + "/nodir")
-        nodir := 0 // For debug only
+        // nodir.setName(this.getTypeString + "_nodir")
+        // nodir := 0 // For debug only
         
         elementsCache.foreach {
             case (name, element) => {
@@ -122,16 +122,12 @@ class TaggedUnion(var encoding: SpinalEnumEncoding = native) extends MultiData w
         }
 
         tag = tagEnum()
-
-        // Adding these elements to generated HDL
-        // valCallbackRec(tag, "tag")   
-
-        // valCallbackRec(nodir, "nodir")
     }
 
 
     override def postInitCallback() = {
         build()
+        println(this.toString())
         this
     }
 
@@ -150,7 +146,7 @@ class TaggedUnion(var encoding: SpinalEnumEncoding = native) extends MultiData w
             case Some((name, _)) => {
                 val variant = tagElementsCache(name)
                 this.tag := variant
-                callback(data)
+                callback(this.nodir.aliasAs(data))
             }
             case None => SpinalError(s"$data is not a member of this TaggedUnion")
         }
