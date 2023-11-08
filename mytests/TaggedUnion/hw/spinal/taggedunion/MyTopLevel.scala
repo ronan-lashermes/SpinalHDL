@@ -39,7 +39,7 @@ case class MemoryController() extends Component {
     // println(s"tagEnum = ${taggedUnion.tagEnum.elements}")
 
     when(io.sel) {
-        taggedUnion.chooseOne(taggedUnion.a1) { 
+        taggedUnion.choose(taggedUnion.a1) { 
             a1: TypeA => {
                 a1.x := 1
                 a1.y := 2
@@ -48,7 +48,7 @@ case class MemoryController() extends Component {
         }
     }
     .otherwise {
-        taggedUnion.chooseOne(taggedUnion.b) {
+        taggedUnion.choose(taggedUnion.b) {
             b: TypeB => {
                 b.l := 4
                 b.m := 5
@@ -58,8 +58,22 @@ case class MemoryController() extends Component {
         }
     }
 
-    val uint_union = taggedUnion.nodir.asUInt
-    io.res := uint_union.resized
+    taggedUnion.among { 
+        case (taggedUnion.a1, ha: TypeA) => {
+            println("a1")
+            io.res := ha.y
+        }
+        case (taggedUnion.b, hb: TypeB) => {
+            println("b")
+            io.res := hb.l.resized
+        }
+        case (x: Data, _) => {
+            println("other " + x.toString())
+            io.res := 0
+        }
+        
+    }
+
 }
 
 object MemoryControllerVerilog extends App {

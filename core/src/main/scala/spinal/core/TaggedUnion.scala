@@ -111,8 +111,7 @@ class TaggedUnion(var encoding: SpinalEnumEncoding = native) extends MultiData w
         assert(elementsCache.size > 0, "TaggedUnion must have at least one element") // TODO, deal with this edge case
         val unionHT = HardType.unionSeq(this.elementsCache.map(_._2))
         nodir = unionHT()
-        // nodir.setName(this.getTypeString + "_nodir")
-        // nodir := 0 // For debug only
+        nodir.setPartialName("nodir")
         
         elementsCache.foreach {
             case (name, element) => {
@@ -127,7 +126,6 @@ class TaggedUnion(var encoding: SpinalEnumEncoding = native) extends MultiData w
 
     override def postInitCallback() = {
         build()
-        println(this.toString())
         this
     }
 
@@ -140,7 +138,7 @@ class TaggedUnion(var encoding: SpinalEnumEncoding = native) extends MultiData w
 
     override def toString(): String = s"${component.getPath() + "/" + this.getDisplayName()} : $getTypeString"
 
-    def chooseOne[T <: Data](data: T)(callback: T => Unit): Unit = {
+    def choose[T <: Data](data: T)(callback: T => Unit): Unit = {
         val chosenElement = this.elementsCache.find(_._2 == data)
         chosenElement match {
             case Some((name, _)) => {
@@ -149,6 +147,25 @@ class TaggedUnion(var encoding: SpinalEnumEncoding = native) extends MultiData w
                 callback(this.nodir.aliasAs(data))
             }
             case None => SpinalError(s"$data is not a member of this TaggedUnion")
+        }
+    }
+
+    // First Data is equal to the variant, second to the actual hardware element
+    def among(callback: (Data, Data) => Unit): Unit = {
+        switch(this.tag) {
+            for((name, enumVariant) <- this.tagElementsCache) {
+                is(enumVariant) {
+                    val dataVariant = this.elementsCache.find(_._1 == name)
+                    dataVariant match {
+                        case Some((_, d)) => {
+                            val dataHardware = this.nodir.aliasAs(d)
+                            callback(d, dataHardware)
+                        }
+                        case None => SpinalError(s"$name is not a member of this TaggedUnion")
+                    }
+                    
+                }
+            }
         }
     }
 }
