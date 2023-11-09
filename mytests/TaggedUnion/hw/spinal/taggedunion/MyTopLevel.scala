@@ -31,13 +31,6 @@ case class MemoryController() extends Component {
     val taggedUnion = Reg(TypeAorB())
     taggedUnion.nodir := 0
 
-    println(s"taggedUnion = ${taggedUnion}")
-    println(s"taggedUnionBits = ${taggedUnion.nodir}")
-    println(s"tag = ${taggedUnion.tag}")
-
-    
-    // println(s"tagEnum = ${taggedUnion.tagEnum.elements}")
-
     when(io.sel) {
         taggedUnion.choose(taggedUnion.a1) { 
             a1: TypeA => {
@@ -73,7 +66,6 @@ case class MemoryController() extends Component {
         }
         
     }
-
 }
 
 object MemoryControllerVerilog extends App {
