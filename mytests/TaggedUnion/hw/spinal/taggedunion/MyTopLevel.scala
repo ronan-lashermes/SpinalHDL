@@ -3,69 +3,68 @@ package taggedunion
 import spinal.core._
 import spinal.lib._
 
-
-case class TypeA() extends Bundle {
-    val x, y, z = UInt(8 bits)
+case class ReadRequest() extends Bundle {
+    val address = UInt(32 bits)
 }
 
-case class TypeB() extends Bundle {
-    val l, m, n = UInt(6 bits)
-    val r = SInt(2 bits)
+case class ReadResponse() extends Bundle {
+    val value = Bits(32 bits)
 }
 
-case class TypeAorB() extends TaggedUnion {
-    val a1 = TypeA()
-    val a2 = TypeA()
-    val b = TypeB()
+case class WriteRequest() extends Bundle {
+    val address = UInt(32 bits)
+    val value = Bits(32 bits)
 }
+
+case class RWRequest() extends TaggedUnion {
+    val read = ReadRequest()
+    val write = WriteRequest()
+}
+
+case class RWResponse() extends TaggedUnion {
+    val read = ReadResponse()
+}
+
+
 
 case class MemoryController() extends Component {
     val io = new Bundle {
-        val sel = in Bool()
-        // val d = in TypeAorB()
-        val res = out UInt(8 bits)
+        val request = master(Stream(RWRequest()))
+        val response = slave(Flow(RWResponse()))
+
+        val doReq = in Bool()
+        val rw = in Bool()
     }
 
-   
+    // Debug
+    io.request.payload.read.address := 0
+    io.request.payload.write.address := 0
+    io.request.payload.write.value := 0
 
-    val taggedUnion = Reg(TypeAorB())
-    taggedUnion.nodir := 0
+    io.request.payload.default()
 
-    when(io.sel) {
-        taggedUnion.choose(taggedUnion.a1) { 
-            a1: TypeA => {
-                a1.x := 1
-                a1.y := 2
-                a1.z := 3
+    io.request.valid := False
+    when(io.doReq) {
+        io.request.valid := True
+        when(io.rw) { //bad !
+            io.request.payload.choose(io.request.payload.write) {
+                wReq: WriteRequest => {
+                    wReq.address := 2
+                    wReq.value := 0
+                }
+            }
+        }
+        .otherwise {
+            io.request.payload.choose(io.request.payload.read) {
+                rReq: ReadRequest => {
+                    rReq.address := 1
+                }
             }
         }
     }
-    .otherwise {
-        taggedUnion.choose(taggedUnion.b) {
-            b: TypeB => {
-                b.l := 4
-                b.m := 5
-                b.n := 6
-                b.r := -1
-            }
-        }
-    }
-
-    taggedUnion.among { 
-        case (taggedUnion.a1, ha: TypeA) => {
-            println("a1")
-            io.res := ha.y
-        }
-        case (taggedUnion.b, hb: TypeB) => {
-            println("b")
-            io.res := hb.l.resized
-        }
-        case (x: Data, _) => {
-            println("other " + x.toString())
-            io.res := 0
-        }
-        
-    }
+    
+    
+    
 }
 
 object MemoryControllerVerilog extends App {

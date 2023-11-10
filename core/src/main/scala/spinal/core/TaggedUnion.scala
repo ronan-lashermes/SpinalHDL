@@ -40,6 +40,11 @@ class TaggedUnion(var encoding: SpinalEnumEncoding = native) extends MultiData w
 
     var nodir: Bits = null
 
+    def default(): Unit = {
+        this.nodir := 0
+        this.tag := this.tagElementsCache.head._2
+    }
+
     override def clone: TaggedUnion = {
         if (hardtype != null) {
         val ret = hardtype().asInstanceOf[this.type]
@@ -52,26 +57,26 @@ class TaggedUnion(var encoding: SpinalEnumEncoding = native) extends MultiData w
     /** Assign the bundle with an other bundle by name */
     def assignAllByName(that: TaggedUnion): Unit = {
         for ((name, element) <- elements) {
-        val other = that.find(name)
-        if (other == null)
-            LocatedPendingError(s"TaggedUnion assignment is not complete. Missing $name")
-        else element match {
-            case b: TaggedUnion => b.assignAllByName(other.asInstanceOf[TaggedUnion])
-            case _         => element := other
-        }
+            val other = that.find(name)
+            if (other == null)
+                LocatedPendingError(s"TaggedUnion assignment is not complete. Missing $name")
+            else element match {
+                case b: TaggedUnion => b.assignAllByName(other.asInstanceOf[TaggedUnion])
+                case _         => element := other
+            }
         }
     }
 
     /** Assign all possible signal fo the bundle with an other bundle by name */
     def assignSomeByName(that: TaggedUnion): Unit = {
         for ((name, element) <- elements) {
-        val other = that.find(name)
-        if (other != null) {
-            element match {
-                case b: TaggedUnion => b.assignSomeByName(other.asInstanceOf[TaggedUnion])
-                case _         => element := other
+            val other = that.find(name)
+            if (other != null) {
+                element match {
+                    case b: TaggedUnion => b.assignSomeByName(other.asInstanceOf[TaggedUnion])
+                    case _         => element := other
+                }
             }
-        }
         }
     }
 
@@ -112,6 +117,9 @@ class TaggedUnion(var encoding: SpinalEnumEncoding = native) extends MultiData w
         val unionHT = HardType.unionSeq(this.elementsCache.map(_._2))
         nodir = unionHT()
         nodir.setPartialName("nodir")
+        nodir := 0 // I don't like that
+        
+        println("Build! " + this.getDisplayName() + "_nodir: " + nodir.toString())
         
         elementsCache.foreach {
             case (name, element) => {
@@ -121,6 +129,10 @@ class TaggedUnion(var encoding: SpinalEnumEncoding = native) extends MultiData w
         }
 
         tag = tagEnum()
+        println("Elements: " + elements.toString())
+        println("ElementCaches: " + elementsCache.toString())
+        // valCallbackRec(tag, "tag")   
+        // valCallbackRec(nodir, "nodir")
     }
 
 
@@ -130,7 +142,9 @@ class TaggedUnion(var encoding: SpinalEnumEncoding = native) extends MultiData w
     }
 
 
-    override def elements: ArrayBuffer[(String, Data)] = elementsCache
+    override def elements: ArrayBuffer[(String, Data)] = {
+        ArrayBuffer(("nodir" -> nodir), ("tag" -> tag))
+    }
 
     private[core] def rejectOlder = true
 
