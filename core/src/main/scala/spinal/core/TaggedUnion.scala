@@ -29,29 +29,56 @@ import spinal.idslplugin.PostInitCallback
 
 
 
+/**
+  * TaggedUnion is a data structure that allows for the creation of type-safe unions
+  * in hardware description using SpinalHDL.
+  *
+  * @param encoding the encoding used for the internal enumeration representing the union tags.
+  */
 class TaggedUnion(var encoding: SpinalEnumEncoding = native) extends MultiData with Nameable with ValCallbackRec with PostInitCallback {
 
+    // The hardtype of the TaggedUnion, used for cloning purposes.
     var hardtype: HardType[_] = null
-    var elementsCache = ArrayBuffer[(String, Data)]()
 
+    // A cache of union member descriptors, storing a tuple of their name and the corresponding Data object.
+    var unionDescriptors = ArrayBuffer[(String, Data)]()
+
+    // The enumeration representing possible tags for the union members.
     var tagEnum: SpinalEnum = new SpinalEnum(encoding)
-    var tagElementsCache: Map[String, SpinalEnumElement[SpinalEnum]] = Map[String, SpinalEnumElement[SpinalEnum]]()
+
+    // A mapping from member names to their respective enumeration elements.
+    var tagUnionDescriptors: mutable.Map[String, SpinalEnumElement[SpinalEnum]] = mutable.Map[String, SpinalEnumElement[SpinalEnum]]()
+
+    // The current tag value, which indicates the active member of the union.
     var tag: SpinalEnumCraft[SpinalEnum] = null
 
-    var nodir: Bits = null
+    // The payload of the union, representing the current value of the active member.
+    var unionPayload: Bits = null
 
-    def default(): Unit = {
-        this.nodir := 0
-        this.tag := this.tagElementsCache.head._2
+    /**
+        * Assigns a "don't care" value to the union payload and tag.
+        *
+        * @return the instance of the current TaggedUnion.
+        */
+    override def assignDontCare(): this.type = {
+        this.unionPayload.assignDontCare()
+        this.tag.assignDontCare()
+        this
     }
 
+    /**
+        * Clones the current instance of TaggedUnion.
+        *
+        * @return a new instance of TaggedUnion with the same hardtype.
+        */
     override def clone: TaggedUnion = {
         if (hardtype != null) {
-        val ret = hardtype().asInstanceOf[this.type]
-        ret.hardtype = hardtype
-        return ret
+            val ret = hardtype().asInstanceOf[this.type]
+            ret.hardtype = hardtype
+            ret
+        } else {
+            super.clone.asInstanceOf[TaggedUnion]
         }
-        super.clone.asInstanceOf[TaggedUnion]
     }
 
     /** Assign the bundle with an other bundle by name */
@@ -102,48 +129,48 @@ class TaggedUnion(var encoding: SpinalEnumEncoding = native) extends MultiData w
         }
     }
 
-
+    // collect the descriptors of the Tagged Union
     override def valCallbackRec(ref: Any, name: String): Unit = ref match {
         case ref : Data => {
-            elementsCache += name -> ref
-            //   ref.parent = this
-            //   if(OwnableRef.proposal(ref, this)) ref.setPartialName(name, Nameable.DATAMODEL_WEAK)
+            unionDescriptors += name -> ref
         }
         case ref =>
     }
 
-    def build(): Unit = {
-        assert(elementsCache.size > 0, "TaggedUnion must have at least one element") // TODO, deal with this edge case
-        val unionHT = HardType.unionSeq(this.elementsCache.map(_._2))
-        nodir = unionHT()
-        nodir.setPartialName("nodir")
-        nodir := 0 // I don't like that
-        
-        println("Build! " + this.getDisplayName() + "_nodir: " + nodir.toString())
-        
-        elementsCache.foreach {
-            case (name, element) => {
-                val el = tagEnum.newElement(name)
-                tagElementsCache += (name -> el)
-            }
-        }
 
-        tag = tagEnum()
-        println("Elements: " + elements.toString())
-        println("ElementCaches: " + elementsCache.toString())
-        // valCallbackRec(tag, "tag")   
-        // valCallbackRec(nodir, "nodir")
+    // Builds the TaggedUnion structure, initializing the union payload and tag based on the descriptors.
+    def build(): Unit = {
+        assert(unionDescriptors.nonEmpty, "TaggedUnion must have at least one element")
+        initializeUnionPayload()
+        initializeTag()
     }
 
+    // Initializes the union payload based on the descriptors.
+    private def initializeUnionPayload(): Unit = {
+        val unionHT = HardType.unionSeq(unionDescriptors.map(_._2))
+        unionPayload = unionHT()
+        unionPayload.setPartialName("unionPayload")
+    }
 
+    // Initializes the tag based on the descriptors.
+    private def initializeTag(): Unit = {
+        unionDescriptors.foreach { 
+            case (name, _) =>
+                val element = tagEnum.newElement(name) // Create one tag variant per descriptor.
+                tagUnionDescriptors += name -> element // Store the mapping of name to descriptor.
+        }
+        tag = tagEnum()
+    }
+
+    // Callback function invoked after initialization to build the TaggedUnion.
     override def postInitCallback() = {
         build()
         this
     }
 
-
+      // Provides the elements of the TaggedUnion, which are the payload and the tag.
     override def elements: ArrayBuffer[(String, Data)] = {
-        ArrayBuffer(("nodir" -> nodir), ("tag" -> tag))
+        ArrayBuffer(("unionPayload" -> unionPayload), ("tag" -> tag))
     }
 
     private[core] def rejectOlder = true
@@ -152,27 +179,38 @@ class TaggedUnion(var encoding: SpinalEnumEncoding = native) extends MultiData w
 
     override def toString(): String = s"${component.getPath() + "/" + this.getDisplayName()} : $getTypeString"
 
+    /**
+    * Selects a member of the union and applies a callback on it.
+    *
+    * @param data the data to be selected.
+    * @param callback the function to be applied on the selected data.
+    * @tparam T the type of the data to be selected.
+    */
     def choose[T <: Data](data: T)(callback: T => Unit): Unit = {
-        val chosenElement = this.elementsCache.find(_._2 == data)
+        val chosenElement = this.unionDescriptors.find(_._2 == data)
         chosenElement match {
             case Some((name, _)) => {
-                val variant = tagElementsCache(name)
+                val variant = tagUnionDescriptors(name)
                 this.tag := variant
-                callback(this.nodir.aliasAs(data))
+                callback(this.unionPayload.aliasAs(data))
             }
             case None => SpinalError(s"$data is not a member of this TaggedUnion")
         }
     }
 
-    // First Data is equal to the variant, second to the actual hardware element
+    /**
+    * Iterates over all members of the union and applies a callback function to the active member.
+    *
+    * @param callback the callback function to apply, taking a pair of the variant and the corresponding hardware element.
+    */
     def among(callback: (Data, Data) => Unit): Unit = {
         switch(this.tag) {
-            for((name, enumVariant) <- this.tagElementsCache) {
+            for((name, enumVariant) <- this.tagUnionDescriptors) {
                 is(enumVariant) {
-                    val dataVariant = this.elementsCache.find(_._1 == name)
+                    val dataVariant = this.unionDescriptors.find(_._1 == name)
                     dataVariant match {
                         case Some((_, d)) => {
-                            val dataHardware = this.nodir.aliasAs(d)
+                            val dataHardware = this.unionPayload.aliasAs(d)
                             callback(d, dataHardware)
                         }
                         case None => SpinalError(s"$name is not a member of this TaggedUnion")

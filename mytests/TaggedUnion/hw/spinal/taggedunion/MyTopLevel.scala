@@ -34,14 +34,12 @@ case class MemoryController() extends Component {
 
         val doReq = in Bool()
         val rw = in Bool()
+
+        val answer = out Bits(32 bits)
     }
 
-    // Debug
-    io.request.payload.read.address := 0
-    io.request.payload.write.address := 0
-    io.request.payload.write.value := 0
+    io.request.payload.assignDontCare()
 
-    io.request.payload.default()
 
     io.request.valid := False
     when(io.doReq) {
@@ -62,8 +60,16 @@ case class MemoryController() extends Component {
             }
         }
     }
-    
-    
+
+    io.answer.assignDontCare()
+
+    when(io.response.valid) {
+        io.response.payload.among {
+            case (io.response.payload.read, rRes: ReadResponse) => {
+                io.answer := rRes.value
+            }
+        }
+    }
     
 }
 
