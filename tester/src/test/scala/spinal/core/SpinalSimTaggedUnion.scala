@@ -147,63 +147,49 @@ object TaggedUnionIndependantTester {
         for (_ <- 0 until 1000) {
           // Randomly select a type
           val selectedType = Random.nextInt(3)
-          dut.io.i.assignDontCare()
+
+          dut.io.i.tag #= dut.io.i.tagEnum.elements(selectedType)
+          val x = Random.nextInt(256)
+          val y = Random.nextInt(256)
+          val l = Random.nextInt(1024)
+          // val v = Random.nextBoolean()
+          val v = Random.nextInt(2)
 
           selectedType match {
             case 0 => // TypeA with a1 variant
-              val x = Random.nextInt(256)
-              val y = Random.nextInt(256)
-              dut.io.i.update(dut.io.i.a1) {
-                a1: TypeA => {
-                    a1.x #= x
-                    a1.y #= y
-                }
-              }
+              dut.io.i.unionPayload #= (y << 8) | x
 
             case 1 => // TypeA with a2 variant
-              val x = Random.nextInt(256)
-              val y = Random.nextInt(256)
-              dut.io.i.update(dut.io.i.a2) {
-                a2: TypeA => {
-                    a2.x #= x
-                    a2.y #= y
-                }
-              }
+              dut.io.i.unionPayload #= (y << 8) | x
 
             case 2 => // TypeB
-              val l = Random.nextInt(1024)
-              val v = Random.nextBoolean()
-
-              dut.io.i.update {
-                b: TypeB => {
-                    b.l #= l
-                    b.v #= v
-                }
-              }
+              dut.io.i.unionPayload #= (v << 10) | l
           }
 
-          println("Enum signature")
-          println(dut.io.o.tagEnum)
-          // dut.clockDomain.waitSampling()
-          sleep(1)
+          dut.clockDomain.waitSampling()
+
+          // println(s"x=$x, y=$y, l=$l, v=$v")
+          // println(s"In ${dut.io.i.tag.toEnum} = ${dut.io.i.unionPayload.toInt}")
+          // println(s"Out ${dut.io.o.tag.toEnum} = ${dut.io.o.unionPayload.toInt}")
+          
       
 
-          // Validate the outputs based on the input type
-          // selectedType match {
-            // case 0 => // in TypeA with a1 variant => out TypeC
-                // assert(dut.io.o.tag.toEnum == dut.io.o.tagEnum.a1)
-                // println("Enum signature")
-                // println(dut.io.o.tagEnum)
-                // assert(dut.io.o.tag.toInt == 0)
+          // Validate the outputs depending on the tag
+          selectedType match {
+            case 0 => // in TypeA with a1 variant => out TypeC
+                assert(dut.io.o.tag.toEnum == dut.io.o.tagEnum.elements(1))
+                assert((dut.io.o.unionPayload.toInt & 0xFF) == x)
+                
 
-            // case 1 => // in TypeA with a2 variant => out TypeC
-            //     assert(dut.io.o.tag.asBits == B"1".asBits)
+            case 1 => // in TypeA with a2 variant => out TypeC
+                 assert(dut.io.o.tag.toEnum == dut.io.o.tagEnum.elements(1))
+                 assert((dut.io.o.unionPayload.toInt & 0xFF) == y)
 
-            // case 2 => // in/out TypeB
-            //     assert(dut.io.o.tag.asBits == B"0".asBits)
-          // }
-
-            
+            case 2 => // in/out TypeB
+                 assert(dut.io.o.tag.toEnum == dut.io.o.tagEnum.elements(0))
+                //  Most significant bits are "dont care".
+                 assert((dut.io.o.unionPayload.toInt & 0x7FF) == ((v << 10) | l))
+          }
         }
 
         println("Simulation TaggedUnion done")
