@@ -26,29 +26,6 @@ import spinal.idslplugin.Location
 
 import scala.collection.Seq
 
-// trait Initializer[T <: Data, V <: Data] {
-//   def init(data: T, value: V): T
-// }
-
-// object Initializer {
-//   // Implicit instance when T and V are the same
-//   implicit def sameTypeInitializer[T <: Data]: Initializer[T, T] = new Initializer[T, T] {
-//     def init(data: T, value: T): T = {
-//       data.initFrom(value)
-//       data
-//     }
-//   }
-
-//   // Implicit instance when T and V are different
-//   implicit def differentTypeInitializer[T <: Data, V <: Data]: Initializer[T, V] = new Initializer[T, V] {
-//     def init(data: T, value: V): T = {
-//       // Different initialization logic or just return the data
-//       data
-//     }
-//   }
-// }
-
-
 object DataAssign
 object InitAssign
 object InitialAssign
@@ -113,27 +90,12 @@ trait DataPrimitives[T <: Data]{
   /** Auto connection between two data */
   def <>(that: T)(implicit loc: Location): Unit = _data autoConnect that
 
-  // /** Set initial value to a data */
-  // def init(that: T): T = {
-  //   _data.initFrom(that)
-  //   _data
-  // }
-
-  // /** Set initial value to a data */
-  // def init[V <: Data](that: V): T = {
-  //   _data.initFrom(that)
-  //   _data
-  // }
-  // def init[A, V <: Data](value: A)(implicit converter: A => V, initializer: Initializer[T, V]): T = {
-  //   initializer.init(_data, converter(value))
-  // }
-
+  /** Set initial value to a data */
   def init[ANY](value: ANY)(implicit converter: ANY => T): T = {
     value match {
-      // If value is taggedunion value, its its is not the same as the hardware
-      case t: TaggedUnion =>
-        println("TaggedUnion init")
-        _data.initFrom(t)
+      // If value is taggedunion value, its value is not the same as the hardware
+    //   case t: TaggedUnion =>
+    //     _data.initFrom(t)
       case v: Data =>
         // If value is a subtype of Data, use it as is
         _data.initFrom(v)

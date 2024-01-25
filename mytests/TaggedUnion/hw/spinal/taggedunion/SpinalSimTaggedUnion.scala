@@ -90,10 +90,10 @@ object TaggedUnionIndependantTester {
   def main(args: Array[String]): Unit = {
     Config.spinal.generateVerilog(new TaggedUnionTester())
   SimConfig.withWave.compile(new TaggedUnionTester()).doSim{ dut =>
-      println("Starting TaggedUnion simulation")
-        println(s"Reset In ${dut.io.i.tag.toEnum} = ${dut.io.i.unionPayload.toInt}")
-        println(s"Out ${dut.io.o.tag.toEnum} = ${dut.io.o.unionPayload.toInt}")
-        println(s"Reg ${dut.io.r.tag.toEnum} = ${dut.io.r.unionPayload.toInt}")
+    //   println("Starting TaggedUnion simulation")
+    //     println(s"Reset In ${dut.io.i.tag.toEnum} = ${dut.io.i.unionPayload.toInt}")
+    //     println(s"Out ${dut.io.o.tag.toEnum} = ${dut.io.o.unionPayload.toInt}")
+    //     println(s"Reg ${dut.io.r.tag.toEnum} = ${dut.io.r.unionPayload.toInt}")
 
         dut.clockDomain.forkStimulus(period = 10)
 
@@ -119,16 +119,16 @@ object TaggedUnionIndependantTester {
               dut.io.i.unionPayload #= (v << 10) | l
           }
 
-          println(s"x=$x, y=$y, l=$l, v=$v")
-          println(s"Before In ${dut.io.i.tag.toEnum} = ${dut.io.i.unionPayload.toInt}")
-          println(s"Out ${dut.io.o.tag.toEnum} = ${dut.io.o.unionPayload.toInt}")
-          println(s"Reg ${dut.io.r.tag.toEnum} = ${dut.io.r.unionPayload.toInt}")
+        //   println(s"x=$x, y=$y, l=$l, v=$v")
+        //   println(s"Before In ${dut.io.i.tag.toEnum} = ${dut.io.i.unionPayload.toInt}")
+        //   println(s"Out ${dut.io.o.tag.toEnum} = ${dut.io.o.unionPayload.toInt}")
+        //   println(s"Reg ${dut.io.r.tag.toEnum} = ${dut.io.r.unionPayload.toInt}")
 
           dut.clockDomain.waitSampling()
 
-          println(s"After In ${dut.io.i.tag.toEnum} = ${dut.io.i.unionPayload.toInt}")
-          println(s"Out ${dut.io.o.tag.toEnum} = ${dut.io.o.unionPayload.toInt}")
-          println(s"Reg ${dut.io.r.tag.toEnum} = ${dut.io.r.unionPayload.toInt}")
+        //   println(s"After In ${dut.io.i.tag.toEnum} = ${dut.io.i.unionPayload.toInt}")
+        //   println(s"Out ${dut.io.o.tag.toEnum} = ${dut.io.o.unionPayload.toInt}")
+        //   println(s"Reg ${dut.io.r.tag.toEnum} = ${dut.io.r.unionPayload.toInt}")
           // assert(dut.io.i.tag.toEnum == dut.io.r.tag.toEnum)
       
 
