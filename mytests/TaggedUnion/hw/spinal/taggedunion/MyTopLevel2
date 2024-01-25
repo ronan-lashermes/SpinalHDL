@@ -1,0 +1,94 @@
+package taggedunion
+
+import spinal.core._
+import spinal.lib._
+
+case class ReadRequest() extends Bundle {
+    val address = UInt(32 bits)
+}
+
+case class ReadResponse() extends Bundle {
+    val value = Bits(32 bits)
+}
+
+case class WriteRequest() extends Bundle {
+    val address = UInt(32 bits)
+    val value = Bits(32 bits)
+}
+
+case class WriteResponse() extends Bundle {
+    val success = Bool()
+}
+
+case class RWRequest() extends TaggedUnion {
+    val read = ReadRequest()
+    val write = WriteRequest()
+}
+
+
+case class RWResponse() extends TaggedUnion {
+    val read = ReadResponse()
+    val write = WriteResponse()
+}
+
+// case class StressTest() extends TaggedUnion {
+//     val a = Bits(16 bits)
+//     val b = Bits(32 bits)
+// }
+
+case class MemoryController() extends Component {
+    val io = new Bundle {
+        val request = master(Stream(RWRequest()))
+        val response = slave(Flow(RWResponse()))
+
+        val doReq = in Bool()
+        val rw = in Bool()
+
+        val answer = out Bits(32 bits)
+    }
+
+    io.request.payload.assignDontCare()
+
+    io.request.valid := False
+    when(io.doReq) {
+        io.request.valid := True
+        when(io.rw) {
+            io.request.payload.choose {
+                case wReq: WriteRequest => {
+                    wReq.address := 2
+                    wReq.value := 0
+                }
+            }
+        }
+        .otherwise {
+            io.request.payload.chooseVariant(io.request.payload.read) {
+                rReq: ReadRequest => {
+                    rReq.address := 1
+                }
+            }
+        }
+    }
+
+    io.answer.assignDontCare()
+
+    when(io.response.valid) {
+        io.response.payload.among {
+            case rRes: ReadResponse => {
+                io.answer := rRes.value
+            }
+            case wRes: WriteResponse => {
+                when(wRes.success) {
+                    io.answer := 0
+                }
+                .otherwise {
+                    io.answer := 1
+                }
+            }
+        }
+    }
+    
+}
+
+object MemoryControllerVerilog extends App {
+    Config.spinal.generateVerilog(MemoryController())
+}

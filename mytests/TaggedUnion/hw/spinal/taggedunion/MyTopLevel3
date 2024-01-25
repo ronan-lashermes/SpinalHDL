@@ -1,0 +1,29 @@
+package taggedunion
+
+import spinal.core._
+import spinal.lib._
+
+
+
+
+case class MemoryController() extends Component {
+    val io = new Bundle {
+        val sel = in Bool()
+        // val d = in TypeAorB()
+        val res = out UInt(8 bits)
+    }
+
+    val aOrbUnion = HardType.union(Bits(16 bits), Bits(32 bits))
+    val aOrb: Bits = aOrbUnion()
+
+    
+    val a1 = aOrb.aliasAs(new Bundle { val v = Bits(16 bits)})
+
+
+   
+    io.res := 0
+}
+
+object MemoryControllerVerilog extends App {
+    Config.spinal.generateVerilog(MemoryController())
+}
